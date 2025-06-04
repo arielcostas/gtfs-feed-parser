@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Service Report for {{ service_id }}</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            padding: 2rem;
+            background-color: #fff;
+            line-height: 1.5;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 2rem;
+            font-weight: 600;
+        }
+
+        table {
+            border-collapse: collapse;
+            margin-bottom: 2rem;
+        }
+
+        th,
+        td {
+            border: 1px solid #ccc;
+            padding: 0.75rem;
+            font-size: 0.95rem;
+            text-align: left;
+            background: none;
+        }
+
+        th {
+            font-weight: 600;
+            background-color: #f5f5f5;
+        }
+
+        th[colspan="2"] {
+            text-align: center;
+            background-color: #eaeaea;
+        }
+
+        .td-time {
+            text-align: right;
+        }
+
+        th[rowspan],
+        td[rowspan] {
+            vertical-align: middle;
+        }
+
+        @media print {
+            body {
+                margin: 0;
+                padding: 0;
+                background: #fff;
+                color: #000;
+            }
+
+            h1 {
+                font-size: 1.25rem;
+                margin-bottom: 0.5rem;
+            }
+
+            table {
+                width: 100%;
+                page-break-inside: avoid;
+            }
+
+            th,
+            td {
+                border: 1px solid #000;
+                color: #000;
+                background: none !important;
+                padding: 0.5rem;
+            }
+
+            th {
+                font-weight: bold;
+            }
+
+            .td-time {
+                color: #000;
+            }
+
+            tfoot {
+                display: none;
+            }
+        }
+
+        {{ css_classes }}
+    </style>
+
+</head>
+
+<body>
+    <table>
+        <thead>
+            <tr>
+                <th rowspan="2">Línea</th>
+                <th rowspan="2">Letrero</th>
+                <th>Hora de salida</th>
+                <th>Primera parada</th>
+                <th rowspan="2">Distancia</th>
+            </tr>
+            <tr>
+                <th>Hora de llegada</th>
+                <th>Última parada</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in trip_rows %}
+            <tr class="trip-line-{{ row.route_short_name|replace(' ', '-')|replace('.', '-') }}">
+                <th rowspan="2">{{ row.route_short_name }}</th>
+                <td rowspan="2">{{ row.headsign }}</td>
+                <td class="td-time">{{ row.first_arrival }}</td>
+                <td>{{ row.first_stop_name }}</td>
+                <td rowspan="2">{{ row.distance|replace('.', ',') }} km</td>
+            </tr>
+            <tr class="trip-line-{{ row.route_short_name|replace(' ', '-')|replace('.', '-') }}">
+                <td class="td-time">{{ row.last_arrival }}</td>
+                <td>{{ row.last_stop_name }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="4" style="text-align: right; font-weight: bold;">Total:</td>
+                <td>{{ total_distance|replace('.', ',') }} km</td>
+            </tr>
+        </tfoot>
+    </table>
+</body>
+
+</html>
