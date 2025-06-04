@@ -18,6 +18,7 @@ class StopTime:
         self.stop_id = stop_id
         self.stop_sequence = stop_sequence
         self.shape_dist_traveled = shape_dist_traveled
+        self.day_change = False  # New attribute to indicate day change
 
     def __str__(self):
         return f"StopTime({self.trip_id=}, {self.arrival_time=}, {self.departure_time=}, {self.stop_id=}, {self.stop_sequence=})"

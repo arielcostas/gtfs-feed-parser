@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta rel="robots" content="noindex, nofollow">
+    <link rel="stylesheet" href="@import url(https://fonts.bunny.net/css?family=inter:400,600);">
+
+    <title>Índice de Reporte de Servicios para {{ date }}</title>
+    <style>
+        body { font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 2rem; }
+        h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+        ul { list-style: none; padding: 0; }
+        li { margin-bottom: 0.5rem; }
+        a { color: #0074d9; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <h1>Servicios disponibles para {{ date }}</h1>
+    <p><a href="../index.html">Volver al índice global</a></p>
+    <ul>
+        {% for service in services %}
+        <li><a href="{{ service.filename }}">Servicio {{ service.service_id }}</a></li>
+        {% endfor %}
+    </ul>
+    <p><a href="../index.html">Back to all dates</a></p>
+</body>
+</html>

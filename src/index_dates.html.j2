@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta rel="robots" content="noindex, nofollow">
+    <link rel="stylesheet" href="@import url(https://fonts.bunny.net/css?family=inter:400,600);">
+
+    <title>Índice de Fechas de Informes de Servicio</title>
+
+    <style>
+        body { font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 2rem; }
+        h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+        ul { margin: 1rem 0; padding-left: 1.5rem; }
+        li { margin-bottom: 0.5rem; }
+        a { color: #0074d9; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <h1>Fechas disponibles de informes de servicio</h1>
+    <ul>
+        {% for date in dates %}
+            <li><a href="{{ date }}/index.html">{{ date }}</a></li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

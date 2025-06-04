@@ -1,144 +1,212 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 
 <head>
-    <title>Service Report for {{ service_id }}</title>
-
+    <meta charset="UTF-8">
+    <title>Informe de Servicio {{ service_id }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta rel="robots" content="noindex, nofollow">
+    <meta name="description" content="Informe de servicio {{ service_id }} del {{ date }}. Incluye detalles de viaje, distancias y paradas.">
     <style>
         * {
             box-sizing: border-box;
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
             margin: 0;
             padding: 0;
         }
 
         body {
-            padding: 2rem;
+            padding: 1rem;
             background-color: #fff;
             line-height: 1.5;
+            max-width: 1200px;
+            margin: 0 auto;
         }
 
         h1 {
             text-align: center;
-            font-size: 2rem;
-            margin-bottom: 2rem;
+            font-size: 1.75rem;
+            margin-bottom: 1rem;
             font-weight: 600;
         }
 
-        table {
-            border-collapse: collapse;
-            margin-bottom: 2rem;
+        .navigation {
+            margin-bottom: 1.5rem;
+            font-size: 0.9rem;
         }
 
-        th,
-        td {
-            border: 1px solid #ccc;
-            padding: 0.75rem;
-            font-size: 0.95rem;
-            text-align: left;
-            background: none;
+        /* Trip container - each trip gets its own container with a distinct border */
+        .trip-container {
+            border: 2px solid #bbb;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            background-color: #fff;
+            overflow: hidden;
         }
 
-        th {
-            font-weight: 600;
-            background-color: #f5f5f5;
+        .trip-header {
+            display: flex;
+            background-color: #f8f8f8;
+            border-bottom: 1px solid #ddd;
+            padding: 0.5rem;
         }
 
-        th[colspan="2"] {
-            text-align: center;
-            background-color: #eaeaea;
+        .trip-header .route {
+            font-weight: bold;
+            font-size: 1.1rem;
+            min-width: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-right: 1px solid #ddd;
+            margin-right: 0.5rem;
+            padding-right: 0.5rem;
         }
 
-        .td-time {
+        .trip-header .headsign {
+            flex-grow: 1;
+            font-weight: 500;
+        }
+
+        .trip-header .distance {
+            min-width: 80px;
             text-align: right;
+            font-weight: 500;
         }
 
-        th[rowspan],
-        td[rowspan] {
-            vertical-align: middle;
+        .trip-details {
+            display: flex;
+            flex-wrap: wrap;
         }
 
+        .trip-leg {
+            flex: 1;
+            min-width: 280px;
+            padding: 0.75rem;
+        }
+
+        .trip-leg:first-child {
+            border-right: 1px solid #ddd;
+        }
+
+        .trip-time {
+            font-weight: 600;
+            font-family: 'Consolas', monospace;
+            font-size: 1.1rem;
+        }
+
+        .trip-stop {
+            margin-top: 0.25rem;
+            color: #333;
+        }
+        
+        /* Day change marker */
+        .day-change-marker {
+            background-color: #fff3cd;
+            border: 2px solid #f5c86a;
+            color: #856404;
+            text-align: center;
+            padding: 0.75rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+
+        /* Total distance counter */
+        .total-distance {
+            text-align: right;
+            font-weight: bold;
+            padding: 0.75rem;
+            margin-top: 1rem;
+            border-top: 1px solid #ddd;
+        }
+
+        /* Media query for print */
         @media print {
             body {
-                margin: 0;
                 padding: 0;
-                background: #fff;
-                color: #000;
+                margin: 0;
             }
 
-            h1 {
-                font-size: 1.25rem;
+            .trip-container {
+                page-break-inside: avoid;
+                border: 1px solid #000;
                 margin-bottom: 0.5rem;
             }
 
-            table {
-                width: 100%;
-                page-break-inside: avoid;
+            .trip-header {
+                background-color: #f5f5f5 !important;
             }
 
-            th,
-            td {
+            .day-change-marker {
                 border: 1px solid #000;
-                color: #000;
-                background: none !important;
-                padding: 0.5rem;
-            }
-
-            th {
-                font-weight: bold;
-            }
-
-            .td-time {
+                background-color: #f5f5f5 !important;
                 color: #000;
             }
 
-            tfoot {
+            .navigation {
                 display: none;
             }
         }
 
         {{ css_classes }}
     </style>
-
 </head>
 
 <body>
-    <table>
-        <thead>
-            <tr>
-                <th rowspan="2">Línea</th>
-                <th rowspan="2">Letrero</th>
-                <th>Hora de salida</th>
-                <th>Primera parada</th>
-                <th rowspan="2">Distancia</th>
-            </tr>
-            <tr>
-                <th>Hora de llegada</th>
-                <th>Última parada</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in trip_rows %}
-            <tr class="trip-line-{{ row.route_short_name|replace(' ', '-')|replace('.', '-') }}">
-                <th rowspan="2">{{ row.route_short_name }}</th>
-                <td rowspan="2">{{ row.headsign }}</td>
-                <td class="td-time">{{ row.first_arrival }}</td>
-                <td>{{ row.first_stop_name }}</td>
-                <td rowspan="2">{{ row.distance|replace('.', ',') }} km</td>
-            </tr>
-            <tr class="trip-line-{{ row.route_short_name|replace(' ', '-')|replace('.', '-') }}">
-                <td class="td-time">{{ row.last_arrival }}</td>
-                <td>{{ row.last_stop_name }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-        <tfoot>
-            <tr>
-                <td colspan="4" style="text-align: right; font-weight: bold;">Total:</td>
-                <td>{{ total_distance|replace('.', ',') }} km</td>
-            </tr>
-        </tfoot>
-    </table>
-</body>
+    <h1>Servicio {{ service_id }}</h1>
+    <div class="navigation">
+        <a href="../index.html">Servicios</a> &gt; <a href="./index.html">{{ date }}</a>
+    </div>
 
+    {% set day_changes = [] %}
+    {% for row in trip_rows %}
+        {% set current_time = row.first_arrival %}
+        {% set current_hour = current_time.split(':')[0]|int %}
+        
+        {# Day change marker #}
+        {% if current_hour >= 24 and day_changes|length == 0 %}
+            <div class="day-change-marker">
+                Cambio de día (00:00 - día siguiente)
+            </div>
+            {% set _ = day_changes.append(1) %}
+        {% endif %}
+        
+        {# Trip container - each trip gets its own container with clear visual separation #}
+        <div class="trip-container trip-line-{{ row.route_short_name|replace(' ', '-')|replace('.', '-') }}">
+            <div class="trip-header">
+                <div class="route">{{ row.route_short_name }}</div>
+                <div class="headsign">{{ row.headsign }}</div>
+                <div class="distance">{{ row.distance|replace('.', ',') }} km</div>
+            </div>
+            <div class="trip-details">
+                <div class="trip-leg">
+                    <div class="trip-time">
+                        {% if current_hour >= 24 %}
+                            {{ (current_hour - 24)|string }}:{{ current_time.split(':')[1] }}:{{ current_time.split(':')[2] }}
+                        {% else %}
+                            {{ current_time }}
+                        {% endif %}
+                    </div>
+                    <div class="trip-stop">{{ row.first_stop_name }}</div>
+                </div>
+                <div class="trip-leg">
+                    {% set last_hour = row.last_arrival.split(':')[0]|int %}
+                    <div class="trip-time">
+                        {% if last_hour >= 24 %}
+                            {{ (last_hour - 24)|string }}:{{ row.last_arrival.split(':')[1] }}:{{ row.last_arrival.split(':')[2] }}
+                        {% else %}
+                            {{ row.last_arrival }}
+                        {% endif %}
+                    </div>
+                    <div class="trip-stop">{{ row.last_stop_name }}</div>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+
+    <div class="total-distance">
+        Total: {{ total_distance|replace('.', ',') }} km
+    </div>
+</body>
 </html>
