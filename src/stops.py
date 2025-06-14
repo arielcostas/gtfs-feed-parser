@@ -2,7 +2,6 @@ import os
 from dataclasses import dataclass
 from typing import Dict, Optional
 from src.logger import get_logger
-from src.config import FEED_DIR
 
 logger = get_logger("stops")
 
@@ -16,9 +15,9 @@ class Stop:
     stop_lon: Optional[float]
 
 
-def get_all_stops() -> Dict[str, Stop]:
+def get_all_stops(feed_dir: str) -> Dict[str, Stop]:
     stops: Dict[str, Stop] = {}
-    file_path = os.path.join(FEED_DIR, 'stops.txt')
+    file_path = os.path.join(feed_dir, 'stops.txt')
 
     try:
         with open(file_path, 'r', encoding="utf-8") as f:

@@ -3,7 +3,6 @@ Functions for handling GTFS trip data.
 """
 import os
 from src.logger import get_logger
-from src.config import FEED_DIR
 
 logger = get_logger("trips")
 
@@ -24,7 +23,7 @@ class TripLine:
         return f"TripLine({self.route_id=}, {self.service_id=}, {self.trip_id=}, {self.headsign=}, {self.direction_id=})"
 
 
-def get_trips_for_services(service_ids: list[str]) -> dict[str, list[TripLine]]:
+def get_trips_for_services(feed_dir: str, service_ids: list[str]) -> dict[str, list[TripLine]]:
     """
     Get trips for a list of service IDs based on the 'trips.txt' file.
     
@@ -37,7 +36,7 @@ def get_trips_for_services(service_ids: list[str]) -> dict[str, list[TripLine]]:
     trips: dict[str, list[TripLine]] = {}
 
     try:
-        with open(os.path.join(FEED_DIR, 'trips.txt'), 'r', encoding="utf-8") as trips_file:
+        with open(os.path.join(feed_dir, 'trips.txt'), 'r', encoding="utf-8") as trips_file:
             lines = trips_file.readlines()
             if len(lines) <= 1:
                 logger.warning(

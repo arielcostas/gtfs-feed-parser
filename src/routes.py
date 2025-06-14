@@ -3,9 +3,8 @@ Module for loading and querying GTFS routes data.
 """
 import os
 import csv
-from src.config import FEED_DIR
 
-def load_routes() -> dict[str, dict[str, str]]:
+def load_routes(feed_dir: str) -> dict[str, dict[str, str]]:
     """
     Load routes data from the GTFS feed.
 
@@ -14,7 +13,7 @@ def load_routes() -> dict[str, dict[str, str]]:
               containing route_short_name and route_color.
     """
     routes: dict[str, dict[str, str]] = {}
-    routes_file_path = os.path.join(FEED_DIR, 'routes.txt')
+    routes_file_path = os.path.join(feed_dir, 'routes.txt')
 
     try:
         with open(routes_file_path, 'r', encoding='utf-8') as routes_file:

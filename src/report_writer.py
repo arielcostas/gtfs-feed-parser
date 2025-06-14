@@ -8,10 +8,10 @@ from src.logger import get_logger
 from src.trips import TripLine
 from src.stop_times import StopTime
 
-def write_service_html(filename: str, service_id: str, trips: List[TripLine], date: str, stops_for_trips: Dict[str, List[StopTime]]) -> None:
+def write_service_html(filename: str, feed_dir: str, service_id: str, trips: List[TripLine], date: str, stops_for_trips: Dict[str, List[StopTime]]) -> None:
     logger = get_logger("report_writer")
     
-    data: dict[str, Any] = get_service_report_data(service_id, trips, date, stops_for_trips)
+    data: dict[str, Any] = get_service_report_data(feed_dir, service_id, trips, date, stops_for_trips)
     
     html_output: str = render_html_report("service_report.html.j2", data)
     try:

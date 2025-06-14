@@ -13,7 +13,6 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(__file__))
 
 from src.logger import get_logger
-from src.config import FEED_DIR
 from src.stops import get_all_stops
 from src.services import get_active_services
 from src.trips import get_trips_for_services
@@ -32,14 +31,14 @@ def date_range(start: str, end: str):
         start_dt += timedelta(days=1)
 
 
-def get_all_feed_dates() -> List[str]:
+def get_all_feed_dates(feed_dir: str) -> List[str]:
     """
     Returns all dates the feed is valid for, using calendar.txt if present, else calendar_dates.txt.
     """
     import csv
     import os
-    calendar_path = os.path.join(FEED_DIR, 'calendar.txt')
-    calendar_dates_path = os.path.join(FEED_DIR, 'calendar_dates.txt')
+    calendar_path = os.path.join(feed_dir, 'calendar.txt')
+    calendar_dates_path = os.path.join(feed_dir, 'calendar_dates.txt')
     # Try calendar.txt first
     if os.path.exists(calendar_path):
         with open(calendar_path, encoding='utf-8') as f:
@@ -92,6 +91,7 @@ def parse_args():
                         help='End date (YYYY-MM-DD, inclusive)')
     parser.add_argument('--all-dates', action='store_true', help='Process all dates in the feed')
     parser.add_argument('--output-dir', type=str, default="./output/", help='Directory to write reports to (default: ./output/)')
+    parser.add_argument('--feed-dir', type=str, required=True, help="Path to the feed directory")
     args = parser.parse_args()
     if not args.all_dates and not args.start_date:
         parser.error('--start-date is required unless --all-dates is specified')
@@ -101,9 +101,13 @@ def parse_args():
 def main():
     args = parse_args()
     output_dir = args.output_dir
+    feed_dir = args.feed_dir
+    if not os.path.exists(feed_dir):
+        logger.error(f"Feed directory does not exist: {feed_dir}")
+        sys.exit(1)
 
     if args.all_dates:
-        all_dates = get_all_feed_dates()
+        all_dates = get_all_feed_dates(feed_dir)
         if not all_dates:
             logger.error('No valid dates found in feed.')
             return
@@ -130,20 +134,20 @@ def main():
         if not stops:
             logger.info("No stops found in the feed.")
             continue
-        active_services = get_active_services(current_date)
+        active_services = get_active_services(feed_dir, current_date)
         if active_services:
             logger.info(
                 f"Found {len(active_services)} active services for date {current_date}.")
         else:
             logger.info("No active services found for the given date.")
             continue
-        trips = get_trips_for_services(active_services)
+        trips = get_trips_for_services(feed_dir: str, active_services)
         total_trip_count = sum(len(trip_list) for trip_list in trips.values())
         logger.info(f"Found {total_trip_count} trips for active services.")
         all_trip_ids = [trip.trip_id for trip_list in trips.values() for trip in trip_list]
-        stops_for_all_trips = get_stops_for_trips(all_trip_ids)
+        stops_for_all_trips = get_stops_for_trips(feed_dir, all_trip_ids)
         logger.info(f"Precomputed stops for {len(stops_for_all_trips)} trips.")
-        routes = load_routes()
+        routes = load_routes(feed_dir)
         logger.info(f"Loaded {len(routes)} routes from feed.")
         # Prepare output directory for this date
         date_dir = os.path.join(output_dir, current_date)
@@ -163,7 +167,7 @@ def main():
                             f"Route ID {trip.route_id} not found in routes data.")
                 filename = f"{service_id}_{current_date}.html"
                 file_path = os.path.join(date_dir, filename)
-                write_service_html(file_path, service_id, trip_list, current_date, stops_for_all_trips)
+                write_service_html(file_path, feed_dir, service_id, trip_list, current_date, stops_for_all_trips)
                 generated_services.append({"service_id": service_id, "filename": filename})
             except Exception as e:
                 logger.error(

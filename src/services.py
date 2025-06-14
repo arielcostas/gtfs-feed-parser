@@ -4,11 +4,10 @@ Functions for handling GTFS service data.
 import os
 import datetime
 from src.logger import get_logger
-from src.config import FEED_DIR
 
 logger = get_logger("services")
 
-def get_active_services(date: str) -> list[str]:
+def get_active_services(feed_dir: str, date: str) -> list[str]:
     """
     Get active services for a given date based on the 'calendar.txt' and 'calendar_dates.txt' files.
     
@@ -29,7 +28,7 @@ def get_active_services(date: str) -> list[str]:
 
     # Check calendar.txt for services active on the given date
     try:
-        with open(os.path.join(FEED_DIR, 'calendar.txt'), 'r', encoding="utf-8") as calendar_file:
+        with open(os.path.join(feed_dir, 'calendar.txt'), 'r', encoding="utf-8") as calendar_file:
             lines = calendar_file.readlines()
             # If there is only one line (header), log a warning and skip it
             if len(lines) <= 1:
@@ -45,7 +44,7 @@ def get_active_services(date: str) -> list[str]:
 
     # Check calendar_dates.txt for exceptions
     try:
-        with open(os.path.join(FEED_DIR, 'calendar_dates.txt'), 'r', encoding="utf-8") as calendar_dates_file:
+        with open(os.path.join(feed_dir, 'calendar_dates.txt'), 'r', encoding="utf-8") as calendar_dates_file:
             lines = calendar_dates_file.readlines()
             # If there is only one line (header), log a warning and skip it
             if len(lines) <= 1:

@@ -2,7 +2,6 @@
 Functions for handling GTFS stop_times data.
 """
 import os
-from src.config import FEED_DIR
 from src.logger import get_logger
 
 logger = get_logger("stop_times")
@@ -24,7 +23,7 @@ class StopTime:
         return f"StopTime({self.trip_id=}, {self.arrival_time=}, {self.departure_time=}, {self.stop_id=}, {self.stop_sequence=})"
 
 
-def get_stops_for_trips(trip_ids: list[str]) -> dict[str, list[StopTime]]:
+def get_stops_for_trips(feed_dir: str, trip_ids: list[str]) -> dict[str, list[StopTime]]:
     """
     Get stops for a list of trip IDs based on the 'stop_times.txt' file.
     Args:
@@ -34,7 +33,7 @@ def get_stops_for_trips(trip_ids: list[str]) -> dict[str, list[StopTime]]:
     """
     stops: dict[str, list[StopTime]] = {}
     try:
-        with open(os.path.join(FEED_DIR, 'stop_times.txt'), 'r', encoding="utf-8") as stop_times_file:
+        with open(os.path.join(feed_dir, 'stop_times.txt'), 'r', encoding="utf-8") as stop_times_file:
             lines = stop_times_file.readlines()
             if len(lines) <= 1:
                 logger.warning("stop_times.txt file is empty or has only header line, not processing.")
