@@ -2,16 +2,14 @@
 Main script for generating service reports from GTFS data.
 """
 import os
+import shutil
 import sys
 import traceback
 import argparse
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
-# Add the parent directory to sys.path if needed
-if __name__ == "__main__":
-    sys.path.insert(0, os.path.dirname(__file__))
-
+from src.download import download_feed_from_url
 from src.logger import get_logger
 from src.stops import get_all_stops
 from src.services import get_active_services
@@ -91,20 +89,32 @@ def parse_args():
                         help='End date (YYYY-MM-DD, inclusive)')
     parser.add_argument('--all-dates', action='store_true', help='Process all dates in the feed')
     parser.add_argument('--output-dir', type=str, default="./output/", help='Directory to write reports to (default: ./output/)')
-    parser.add_argument('--feed-dir', type=str, required=True, help="Path to the feed directory")
+    parser.add_argument('--feed-dir', type=str, help="Path to the feed directory")
+    parser.add_argument('--feed-url', type=str, help="URL to download the GTFS feed from (if not using local feed directory)")
     args = parser.parse_args()
+
     if not args.all_dates and not args.start_date:
         parser.error('--start-date is required unless --all-dates is specified')
+    if not args.all_dates and not args.end_date:
+        parser.error('--end-date is required unless --all-dates is specified')
+    if args.feed_dir and args.feed_url:
+        parser.error("Specify either --feed-dir or --feed-url, not both.")
+    if not args.feed_dir and not args.feed_url:
+        parser.error("You must specify either a path to the existing feed (unzipped) or a URL to download the GTFS feed from.")
+    if args.feed_dir and not os.path.exists(args.feed_dir):
+        parser.error(f"Feed directory does not exist: {args.feed_dir}")
     return args
 
 
 def main():
     args = parse_args()
     output_dir = args.output_dir
-    feed_dir = args.feed_dir
-    if not os.path.exists(feed_dir):
-        logger.error(f"Feed directory does not exist: {feed_dir}")
-        sys.exit(1)
+    feed_url = args.feed_url
+    if not feed_url:
+        feed_dir = args.feed_dir
+    else:
+        logger.info(f"Downloading GTFS feed from {feed_url}...")
+        feed_dir = download_feed_from_url(feed_url)
 
     if args.all_dates:
         all_dates = get_all_feed_dates(feed_dir)
@@ -129,7 +139,7 @@ def main():
     for current_date in date_list:
         generated_services: list[dict[str, str]] = []
         logger.info(f"Starting service report generation for date {current_date}")
-        stops = get_all_stops()
+        stops = get_all_stops(feed_dir)
         logger.info(f"Found {len(stops)} stops in the feed.")
         if not stops:
             logger.info("No stops found in the feed.")
@@ -141,7 +151,7 @@ def main():
         else:
             logger.info("No active services found for the given date.")
             continue
-        trips = get_trips_for_services(feed_dir: str, active_services)
+        trips = get_trips_for_services(feed_dir, active_services)
         total_trip_count = sum(len(trip_list) for trip_list in trips.values())
         logger.info(f"Found {total_trip_count} trips for active services.")
         all_trip_ids = [trip.trip_id for trip_list in trips.values() for trip in trip_list]
@@ -179,7 +189,7 @@ def main():
             services_by_date[current_date] = generated_services
             # Write per-date index
             render_and_write_html(
-                "index_services.html.j2",
+                "day_index.html.j2",
                 {"date": current_date, "services": generated_services},
                 os.path.join(date_dir, "index.html")
             )
@@ -188,11 +198,18 @@ def main():
     # Write top-level index
     if all_generated_dates:
         render_and_write_html(
-            "index_dates.html.j2",
+            "feed_index.html.j2",
             {"dates": all_generated_dates},
             os.path.join(output_dir, "index.html")
         )
     logger.info("Service report generation completed.")
+
+    if feed_url:
+        logger.debug("Cleaning up temporary feed directory...")
+        if os.path.exists(feed_dir):
+            shutil.rmtree(feed_dir)
+            logger.info(f"Removed temporary feed directory: {feed_dir}")
+
 
 
 if __name__ == "__main__":

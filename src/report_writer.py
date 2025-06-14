@@ -13,7 +13,7 @@ def write_service_html(filename: str, feed_dir: str, service_id: str, trips: Lis
     
     data: dict[str, Any] = get_service_report_data(feed_dir, service_id, trips, date, stops_for_trips)
     
-    html_output: str = render_html_report("service_report.html.j2", data)
+    html_output: str = render_html_report("service.html.j2", data)
     try:
         with open(filename, "w", encoding="utf-8") as f:
             f.write(html_output)

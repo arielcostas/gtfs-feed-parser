@@ -12,5 +12,5 @@ def render_html_report(template_name: str, data: Dict[str, Any]) -> str:
         return datetime.strptime(date_str, "%Y-%m-%d").weekday()
     env = Environment(loader=FileSystemLoader(os.path.dirname(__file__)))
     env.filters['py_weekday'] = py_weekday
-    template = env.get_template(template_name)
+    template = env.get_template(f"templates/{template_name}")
     return template.render(**data)
