@@ -2,11 +2,10 @@
 Main script for generating service reports from GTFS data.
 """
 import os
-import shutil
 import sys
 import traceback
 import argparse
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
 # Add the parent directory to sys.path if needed
@@ -56,7 +55,7 @@ def get_all_feed_dates() -> List[str]:
                 max_date = max(end_dates)
                 # Convert YYYYMMDD to YYYY-MM-DD
                 from datetime import datetime, timedelta
-                start = datetime.strptime(min_date, '%Y%m%d')
+                # datetime and timedelta are already imported at the top of the file
                 end = datetime.strptime(max_date, '%Y%m%d')
                 result: List[str] = []
                 while start <= end:
