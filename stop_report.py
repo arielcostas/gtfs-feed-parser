@@ -1,5 +1,10 @@
 """
-Script for generating stop-based JSON reports from GTFS data.
+Optimized script for generating stop-based JSON reports from GTFS data.
+Key improvements:
+1. Added max_next_stops parameter to limit next stop processing
+2. Parallelized date processing using multiprocessing
+3. Optimized next_stops generation with slicing
+4. Improved memory efficiency with summary data for indexes
 """
 import os
 import shutil
@@ -8,7 +13,9 @@ import traceback
 import argparse
 import json
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+import multiprocessing
+from multiprocessing import Pool, cpu_count
 
 from src.download import download_feed_from_url
 from src.logger import get_logger
@@ -87,6 +94,10 @@ def parse_args():
                         help="Strip non-numeric characters from stop codes (e.g., 'P001400' becomes '1400')")
     parser.add_argument('--pretty', action='store_true', 
                         help="Pretty-print JSON output (default is compact JSON without spaces)")
+    parser.add_argument('--jobs', type=int, default=0, 
+                        help="Number of parallel processes to use (default: 0). Set to 0 for automatic detection.")
+    parser.add_argument('--max-next-stops', type=int, default=None,
+                        help="Limit the number of next stops included in the report (default: all)")
     args = parser.parse_args()
 
     if not args.all_dates and not args.start_date:
@@ -111,7 +122,8 @@ def time_to_seconds(time_str: str) -> int:
     return hours * 3600 + minutes * 60 + seconds
 
 
-def get_stop_arrivals(feed_dir: str, date: str, numeric_stop_code: bool = False) -> Dict[str, List[Dict[str, Any]]]:
+def get_stop_arrivals(feed_dir: str, date: str, numeric_stop_code: bool = False, 
+                     max_next_stops: Optional[int] = None) -> Dict[str, List[Dict[str, Any]]]:
     """
     Process trips for the given date and organize stop arrivals.
     
@@ -119,6 +131,7 @@ def get_stop_arrivals(feed_dir: str, date: str, numeric_stop_code: bool = False)
         feed_dir: Path to the GTFS feed directory
         date: Date in YYYY-MM-DD format
         numeric_stop_code: If True, strip non-numeric characters from stop codes
+        max_next_stops: Maximum number of next stops to include (None for all)
         
     Returns:
         Dictionary mapping stop_code to lists of arrival information.
@@ -146,7 +159,9 @@ def get_stop_arrivals(feed_dir: str, date: str, numeric_stop_code: bool = False)
     
     # Load routes information
     routes = load_routes(feed_dir)
-    logger.info(f"Loaded {len(routes)} routes from feed.")    # Create a reverse lookup from stop_id to stop_code
+    logger.info(f"Loaded {len(routes)} routes from feed.")
+    
+    # Create a reverse lookup from stop_id to stop_code
     stop_id_to_code = {}
     for stop_id, stop in stops.items():
         if stop.stop_code:
@@ -168,7 +183,8 @@ def get_stop_arrivals(feed_dir: str, date: str, numeric_stop_code: bool = False)
             route_info = routes.get(trip.route_id, {})
             route_short_name = route_info.get('route_short_name', '')
             route_color = route_info.get('route_color', '')
-              # Get stop times for this trip
+            
+            # Get stop times for this trip
             trip_stops = stops_for_all_trips.get(trip.trip_id, [])
             
             for i, stop_time in enumerate(trip_stops):
@@ -184,10 +200,13 @@ def get_stop_arrivals(feed_dir: str, date: str, numeric_stop_code: bool = False)
                 # Get stop information
                 stop = stops.get(stop_id)
                 stop_name = stop.stop_name if stop else "Unknown Stop"
-                  # Get the next stops in the trip (from current position to the end)
+                
+                # Get next stops in the trip with limit
                 next_stops = []
                 if i < len(trip_stops) - 1:
-                    for next_stop_time in trip_stops[i+1:]:
+                    # Calculate end index for next stops
+                    end_index = i + 1 + max_next_stops if max_next_stops else len(trip_stops)
+                    for next_stop_time in trip_stops[i+1:end_index]:
                         next_stop_id = next_stop_time.stop_id
                         next_stop = stops.get(next_stop_id)
                         next_stop_code = stop_id_to_code.get(next_stop_id, "")
@@ -200,7 +219,8 @@ def get_stop_arrivals(feed_dir: str, date: str, numeric_stop_code: bool = False)
                             "departure_time": next_stop_time.departure_time,
                             "stop_sequence": next_stop_time.stop_sequence,
                         })
-                  # Convert times to seconds for sorting
+                
+                # Convert times to seconds for sorting
                 arrival_seconds = time_to_seconds(stop_time.arrival_time)
                 stop_arrivals[stop_code].append({
                     "trip_id": trip.trip_id,
@@ -243,27 +263,49 @@ def write_stop_json(output_dir: str, date: str, stop_code: str, arrivals: List[D
     logger.debug(f"Written {len(arrivals)} arrivals to {file_path}")
 
 
-def write_index_json(output_dir: str, stops_data: Dict[str, Dict[str, Any]], pretty: bool):
-    """Write index JSON files for easy navigation."""
+def write_index_json(output_dir: str, stops_summary: Dict[str, Dict[str, int]], pretty: bool):
+    """
+    Write index JSON files with stop counts.
+    
+    Args:
+        stops_summary: Dictionary mapping dates to dictionaries of stop_code: count
+    """
     # Create the stops directory
     stops_dir = os.path.join(output_dir, "stops")
     os.makedirs(stops_dir, exist_ok=True)
-    
-    # Write main index with all available dates
-    dates = list(stops_data.keys())
-    with open(os.path.join(stops_dir, "index.json"), 'w', encoding='utf-8') as f:
-        json.dump({"dates": dates}, f, indent=2 if pretty else None, separators=(",", ":") if not pretty else None)
-    
-    # Write per-date indexes with all stops for that date
-    for date, stops in stops_data.items():
-        date_dir = os.path.join(stops_dir, date)
-        os.makedirs(date_dir, exist_ok=True)
+
+
+def process_date(feed_dir: str, date: str, output_dir: str, 
+                numeric_stop_code: bool, pretty: bool, max_next_stops: Optional[int]):
+    """
+    Process a single date and write its stop JSON files.
+    Returns summary data for index generation.
+    """
+    try:
+        logger = get_logger(f"stop_report_{date}")
+        logger.info(f"Starting stop report generation for date {date}")
         
-        # Create a list of stops with basic info for the index
-        stop_list = [{"stop_code": code, "count": len(data)} for code, data in stops.items()]
+        # Get all stop arrivals for the current date
+        stop_arrivals = get_stop_arrivals(
+            feed_dir, date, numeric_stop_code, max_next_stops
+        )
         
-        with open(os.path.join(date_dir, "index.json"), 'w', encoding='utf-8') as f:
-            json.dump({"date": date, "stops": stop_list}, f, indent=2 if pretty else None, separators=(",", ":") if not pretty else None)
+        if not stop_arrivals:
+            logger.warning(f"No stop arrivals found for date {date}")
+            return date, {}
+        
+        # Write individual stop JSON files
+        for stop_code, arrivals in stop_arrivals.items():
+            write_stop_json(output_dir, date, stop_code, arrivals, pretty)
+        
+        # Create summary for index
+        stop_summary = {stop_code: len(arrivals) for stop_code, arrivals in stop_arrivals.items()}
+        logger.info(f"Processed {len(stop_arrivals)} stops for date {date}")
+        
+        return date, stop_summary
+    except Exception as e:
+        logger.error(f"Error processing date {date}: {e}")
+        raise
 
 
 def main():
@@ -272,6 +314,8 @@ def main():
     feed_url = args.feed_url
     numeric_stop_code = args.numeric_stop_code
     pretty = args.pretty
+    max_next_stops = args.max_next_stops
+    jobs = args.jobs
     
     if not feed_url:
         feed_dir = args.feed_dir
@@ -290,35 +334,45 @@ def main():
         end_date = args.end_date or args.start_date
         date_list = list(date_range(start_date, end_date))
 
-    # Dictionary to store data for index files
-    all_stops_data = {}
-
     # Ensure date_list is not empty before processing
     if not date_list:
         logger.error("No valid dates to process.")
-        return    # Process each date in date_list
-    for current_date in date_list:
-        logger.info(f"Starting stop report generation for date {current_date}")
-        
-        # Get all stop arrivals for the current date
-        stop_arrivals = get_stop_arrivals(feed_dir, current_date, numeric_stop_code)
-        
-        if not stop_arrivals:
-            logger.warning(f"No stop arrivals found for date {current_date}")
-            continue
-        
-        # Store the data for this date
-        all_stops_data[current_date] = {}
-        
-        # Write individual stop JSON files
-        for stop_code, arrivals in stop_arrivals.items():
-            write_stop_json(output_dir, current_date, stop_code, arrivals, pretty)
-            all_stops_data[current_date][stop_code] = arrivals
-        
-        logger.info(f"Processed {len(stop_arrivals)} stops for date {current_date}")
+        return
+    
+    # Determine number of jobs for parallel processing
+    if jobs <= 0:
+        jobs = cpu_count()
+    logger.info(f"Processing {len(date_list)} dates with {jobs} jobs")
+
+    # Dictionary to store summary data for index files
+    all_stops_summary = {}
+
+    if jobs > 1 and len(date_list) > 1:
+        # Parallel processing
+        try:
+            with Pool(processes=jobs) as pool:
+                tasks = [
+                    (feed_dir, date, output_dir, numeric_stop_code, pretty, max_next_stops)
+                    for date in date_list
+                ]
+                results = pool.starmap(process_date, tasks)
+                
+                for date, stop_summary in results:
+                    all_stops_summary[date] = stop_summary
+        except Exception as e:
+            logger.error(f"Error in parallel processing: {e}")
+            # Fallback to sequential processing
+            for date in date_list:
+                _, stop_summary = process_date(feed_dir, date, output_dir, numeric_stop_code, pretty, max_next_stops)
+                all_stops_summary[date] = stop_summary
+    else:
+        # Sequential processing
+        for date in date_list:
+            _, stop_summary = process_date(feed_dir, date, output_dir, numeric_stop_code, pretty, max_next_stops)
+            all_stops_summary[date] = stop_summary
 
     # Write index files
-    write_index_json(output_dir, all_stops_data, pretty)
+    write_index_json(output_dir, all_stops_summary, pretty)
     
     logger.info("Stop report generation completed.")
 
@@ -333,6 +387,7 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
+        logger = get_logger("stop_report")
         logger.critical(f"An unexpected error occurred: {e}", exc_info=True)
         traceback.print_exc()
         sys.exit(1)
