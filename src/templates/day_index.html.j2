@@ -9,22 +9,101 @@
 
     <title>Índice de Reporte de Servicios para {{ date }}</title>
     <style>
-        body { font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 2rem; }
-        h1 { font-size: 1.5rem; margin-bottom: 1rem; }
-        ul { list-style: none; padding: 0; }
-        li { margin-bottom: 0.5rem; }
+        body { font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 2rem; background-color: #fff; max-width: 800px; margin: 0 auto; }
+        h1 { font-size: 1.75rem; margin-bottom: 1.5rem; }
         a { color: #0074d9; text-decoration: none; }
         a:hover { text-decoration: underline; }
+        ul.service-cards { list-style: none; padding: 0; margin: 0; }
+        ul.service-cards li { background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; margin: 0.5rem 0; padding: 1rem; }
+        .service-card-title { font-weight: 600; font-size: 1.1rem; margin-bottom: 0.5rem; }
+        .service-card-info { font-size: 0.9rem; margin-bottom: 0.75rem; color: #555; }
+        .service-card-lines { margin-top: 0.5rem; }
+        .service-card-lines span { display: inline-block; color: #fff; padding: 0.3rem 0.6rem; border-radius: 0.25rem; margin: 0.25rem 0.1rem; font-size: 0.85rem; }
+        /* Filter button styles */
+        .filter-btn { padding: 0.4rem 0.8rem; margin: 0.2rem; border: 1px solid #0074d9; border-radius: 4px; background: #fff; color: #0074d9; cursor: pointer; transition: background 0.2s, color 0.2s; }
+        .filter-btn.active { background: #0074d9; color: #fff; }
     </style>
 </head>
 <body>
     <h1>Servicios disponibles para {{ date }}</h1>
-    <p><a href="../index.html">Volver al índice global</a></p>
-    <ul>
-        {% for service in services %}
-        <li><a href="{{ service.filename }}">Servicio {{ service.service_id }}</a></li>
+    {# Line filter buttons #}
+    <div id="line-filters" style="margin-bottom:1rem; text-align:center;">
+        {# 'Todos' default button #}
+        <button data-line="" class="filter-btn" data-color="#0074d9" style="margin-right:0.5rem; border-color:#0074d9; color:#0074d9;">Todos</button>
+        {% for line in day_lines %}
+            <button data-line="{{ line.name }}" class="filter-btn" data-color="#{{ line.color }}" style="margin-right:0.5rem; border-color:#{{ line.color }}; color:#{{ line.color }};">{{ line.name }}</button>
         {% endfor %}
+    </div>
+    <p><a href="../index.html">Volver al índice global</a></p>
+    <ul class="service-cards">
+    {% for service in services %}
+        <li>
+            <div class="service-card-title">
+                <a href="{{ service.filename }}">Servicio {{ service.service_id }}</a>
+            </div>
+            <div class="service-card-info">
+                {% if service.first_departure and service.last_arrival %}
+                    {{ service.first_departure }} &rarr; {{ service.last_arrival }}<br>
+                {% endif %}
+                {% if service.total_distance %}
+                    Total: {{ service.total_distance }} km
+                {% endif %}
+            </div>
+            {% if service.lines %}
+            <div class="service-card-lines">
+                {% for line in service.lines %}
+                    <span data-line="{{ line.short_name }}" style="background-color:#{{ line.color }};">{{ line.short_name }} ({{ line.count }})</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </li>
+    {% endfor %}
     </ul>
     <p><a href="../index.html">Back to all dates</a></p>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const buttons = Array.from(document.querySelectorAll('#line-filters .filter-btn'));
+        const items = Array.from(document.querySelectorAll('ul.service-cards li'));
+        buttons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const lineKey = btn.getAttribute('data-line');
+                const color = btn.getAttribute('data-color');
+                // Toggle active state and visual fill
+                const isActive = btn.classList.toggle('active');
+                if (isActive) {
+                    btn.style.backgroundColor = color;
+                    btn.style.color = '#fff';
+                } else {
+                    btn.style.backgroundColor = '#fff';
+                    btn.style.color = color;
+                }
+                // Gather active filters
+                const active = buttons.filter(b => b.classList.contains('active')).map(b => b.getAttribute('data-line'));
+                if (active.length === 0) {
+                    items.forEach(li => li.style.display = '');
+                    return;
+                }
+                // Filter items OR logic
+                items.forEach(li => {
+                    const match = active.some(line => li.querySelector('[data-line="' + line + '"]'));
+                    li.style.display = match ? '' : 'none';
+                });
+            });
+        });
+        // Clear other filters when 'Todos' clicked
+        const allBtn = document.querySelector('#line-filters .filter-btn[data-line=""]');
+        allBtn.addEventListener('click', () => {
+            buttons.forEach(b => {
+                if (b !== allBtn && b.classList.contains('active')) {
+                    b.classList.remove('active');
+                    const c = b.getAttribute('data-color');
+                    b.style.backgroundColor = '#fff';
+                    b.style.color = c;
+                }
+            });
+            items.forEach(li => li.style.display = '');
+        });
+    });
+    </script>
 </body>
 </html>

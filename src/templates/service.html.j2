@@ -17,10 +17,10 @@
         }
 
         body {
-            padding: 1rem;
+            padding: 1.5rem;
             background-color: #fff;
             line-height: 1.5;
-            max-width: 1200px;
+            max-width: 800px;
             margin: 0 auto;
         }
 
@@ -37,18 +37,19 @@
         }
 
         .trip-container {
-            border: 2px solid #bbb;
-            border-radius: 4px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background-color: #fafafa;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
             margin-bottom: 1rem;
-            background-color: #fff;
             overflow: hidden;
         }
 
         .trip-header {
             display: flex;
-            background-color: #f8f8f8;
-            border-bottom: 1px solid #ddd;
-            padding: 0.5rem;
+            background-color: #fff;
+            border-bottom: 1px solid #eee;
+            padding: 0.6rem 0.8rem;
         }
 
         .trip-header .route {
@@ -117,9 +118,14 @@
             text-align: right;
             font-weight: bold;
             padding: 0.75rem;
-            margin-top: 1rem;
+            margin-top: 1.5rem;
             border-top: 1px solid #ddd;
+            background-color: #f9f9f9;
+            border-radius: 4px;
         }
+
+        /* Highlight current trip */
+        .trip-container.highlight { box-shadow: 0 0 8px rgba(0,116,217,0.6); border-color: #0074d9; padding: 1rem; }
 
         /* Media query for print */
         @media print {
@@ -173,7 +179,7 @@
         {% endif %}
         
         {# Trip container - each trip gets its own container with clear visual separation #}
-        <div class="trip-container trip-line-{{ row.route_short_name|replace(' ', '-')|replace('.', '-') }}">
+        <div class="trip-container trip-line-{{ row.route_short_name|replace(' ', '-')|replace('.', '-') }}" data-start="{{ row.first_arrival }}" data-end="{{ row.last_arrival }}">
             <div class="trip-header">
                 <div class="route">{{ row.route_short_name }}</div>
                 <div class="headsign">{{ row.headsign }}</div>
@@ -208,5 +214,67 @@
     <div class="total-distance">
         Total: {{ total_distance|replace('.', ',') }} km
     </div>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const pageDate = '{{ date }}';
+        const today = new Date().toISOString().slice(0,10);
+        if (pageDate === today) {
+            const now = new Date();
+            const containers = Array.from(document.querySelectorAll('.trip-container'));
+            // Highlight current trip if any
+            let currentFound = null;
+            containers.forEach(div => {
+                const start = div.getAttribute('data-start');
+                const end = div.getAttribute('data-end');
+                if (start && end) {
+                    const [sh, sm, ss] = start.split(':').map(Number);
+                    const [eh, em, es] = end.split(':').map(Number);
+                    const year = now.getFullYear(), month = now.getMonth(), day = now.getDate();
+                    const startDate = new Date(year, month, day, sh, sm, ss);
+                    const endDate = eh >= 24
+                        ? new Date(year, month, day + 1, eh - 24, em, es)
+                        : new Date(year, month, day, eh, em, es);
+                    if (now >= startDate && now <= endDate) {
+                        currentFound = div;
+                    }
+                }
+            });
+            if (currentFound) {
+                currentFound.classList.add('highlight');
+                currentFound.scrollIntoView({behavior: 'smooth', block: 'center'});
+            } else {
+                // Insert rest div between last past and next future
+                let prev = null, next = null;
+                const times = containers.map(div => {
+                    const start = div.getAttribute('data-start');
+                    const end = div.getAttribute('data-end');
+                    const [sh, sm, ss] = start.split(':').map(Number);
+                    const [eh, em, es] = end.split(':').map(Number);
+                    const year = now.getFullYear(), month = now.getMonth(), day = now.getDate();
+                    const startDate = new Date(year, month, day, sh, sm, ss);
+                    const endDate = eh >= 24
+                        ? new Date(year, month, day + 1, eh - 24, em, es)
+                        : new Date(year, month, day, eh, em, es);
+                    return {div, startDate, endDate};
+                });
+                times.forEach(({div, startDate, endDate}) => {
+                    if (endDate <= now && (!prev || endDate > prev.endDate)) prev = {div, endDate};
+                    if (startDate >= now && (!next || startDate < next.startDate)) next = {div, startDate};
+                });
+                const restDiv = document.createElement('div');
+                restDiv.className = 'trip-container highlight';
+                restDiv.textContent = 'Actual en descanso';
+                if (prev && prev.div.nextSibling) {
+                    prev.div.parentNode.insertBefore(restDiv, prev.div.nextSibling);
+                } else if (next) {
+                    next.div.parentNode.insertBefore(restDiv, next.div);
+                } else {
+                    document.body.insertBefore(restDiv, document.querySelector('.total-distance'));
+                }
+                restDiv.scrollIntoView({behavior: 'smooth', block: 'center'});
+            }
+        }
+    });
+    </script>
 </body>
 </html>

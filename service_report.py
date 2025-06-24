@@ -17,6 +17,7 @@ from src.trips import get_trips_for_services
 from src.report_writer import write_service_html
 from src.stop_times import get_stops_for_trips
 from src.routes import load_routes
+from src.report_data import get_service_report_data
 
 logger = get_logger("service_report")
 
@@ -178,7 +179,40 @@ def main():
                 filename = f"{service_id}_{current_date}.html"
                 file_path = os.path.join(date_dir, filename)
                 write_service_html(file_path, feed_dir, service_id, trip_list, current_date, stops_for_all_trips)
-                generated_services.append({"service_id": service_id, "filename": filename})
+                # Compute summary details for index
+                summary = get_service_report_data(feed_dir, service_id, trip_list, current_date, stops_for_all_trips)
+                # First departure and last arrival
+                first_departure = summary["trip_rows"][0]["first_arrival"] if summary.get("trip_rows") else None
+                last_arrival = max(r.get("last_arrival") for r in summary.get("trip_rows", [])) if summary.get("trip_rows") else None
+                # Unique lines with colors and counts
+                # Compute trip counts per line
+                counts: dict[str, int] = {}
+                for r in summary.get("trip_rows", []):
+                    name = r.get("route_short_name")
+                    if name:
+                        counts[name] = counts.get(name, 0) + 1
+                seen = set()
+                lines = []
+                # Preserve order of first appearance
+                for r in summary.get("trip_rows", []):
+                    name = r.get("route_short_name")
+                    color = r.get("route_colour")
+                    if name and name not in seen:
+                        seen.add(name)
+                        lines.append({
+                            "short_name": name,
+                            "color": color,
+                            "count": counts.get(name, 0)
+                        })
+                # Append enriched service info
+                generated_services.append({
+                    "service_id": service_id,
+                    "filename": filename,
+                    "first_departure": first_departure,
+                    "last_arrival": last_arrival,
+                    "total_distance": summary.get("total_distance"),
+                    "lines": lines
+                })
             except Exception as e:
                 logger.error(
                     f"Error generating report for service {service_id} on {current_date}: {e}")
@@ -187,10 +221,30 @@ def main():
             all_generated_dates.append(current_date)
         if generated_services:
             services_by_date[current_date] = generated_services
+            # Compute unique lines for filter buttons
+            unique_day_lines: list[dict[str,str]] = []
+            seen_lines = set()
+            for svc in generated_services:
+                for ln in svc.get("lines", []):
+                    name = ln.get("short_name")
+                    color = ln.get("color")
+                    if name and name not in seen_lines:
+                        seen_lines.add(name)
+                        unique_day_lines.append({"name": name, "color": color})
+            # Sort lines by order in routes.txt
+            import csv
+            try:
+                routes_path = os.path.join(feed_dir, 'routes.txt')
+                with open(routes_path, encoding='utf-8') as rf:
+                    reader = csv.DictReader(rf)
+                    order = [row.get('route_short_name', '') for row in reader]
+            except Exception:
+                order = [ln['name'] for ln in unique_day_lines]
+            unique_day_lines.sort(key=lambda ln: order.index(ln['name']) if ln['name'] in order else len(order))
             # Write per-date index
             render_and_write_html(
                 "day_index.html.j2",
-                {"date": current_date, "services": generated_services},
+                {"date": current_date, "services": generated_services, "day_lines": unique_day_lines},
                 os.path.join(date_dir, "index.html")
             )
 
