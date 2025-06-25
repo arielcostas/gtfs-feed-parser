@@ -1,11 +1,3 @@
-"""
-Optimized script for generating stop-based JSON reports from GTFS data.
-Key improvements:
-1. Added max_next_stops parameter to limit next stop processing
-2. Parallelized date processing using multiprocessing
-3. Optimized next_stops generation with slicing
-4. Improved memory efficiency with summary data for indexes
-"""
 import os
 import shutil
 import sys
@@ -21,6 +13,7 @@ from src.download import download_feed_from_url
 from src.logger import get_logger
 from src.stops import get_all_stops
 from src.services import get_active_services
+from src.street_name import get_street_name
 from src.trips import get_trips_for_services
 from src.stop_times import get_stops_for_trips
 from src.routes import load_routes
@@ -86,28 +79,32 @@ def parse_args():
                         help='Start date (YYYY-MM-DD)')
     parser.add_argument('--end-date', type=str,
                         help='End date (YYYY-MM-DD, inclusive)')
-    parser.add_argument('--all-dates', action='store_true', help='Process all dates in the feed')
-    parser.add_argument('--output-dir', type=str, default="./output/", help='Directory to write reports to (default: ./output/)')
-    parser.add_argument('--feed-dir', type=str, help="Path to the feed directory")
-    parser.add_argument('--feed-url', type=str, help="URL to download the GTFS feed from (if not using local feed directory)")
-    parser.add_argument('--numeric-stop-code', action='store_true', 
+    parser.add_argument('--all-dates', action='store_true',
+                        help='Process all dates in the feed')
+    parser.add_argument('--output-dir', type=str, default="./output/",
+                        help='Directory to write reports to (default: ./output/)')
+    parser.add_argument('--feed-dir', type=str,
+                        help="Path to the feed directory")
+    parser.add_argument('--feed-url', type=str,
+                        help="URL to download the GTFS feed from (if not using local feed directory)")
+    parser.add_argument('--numeric-stop-code', action='store_true',
                         help="Strip non-numeric characters from stop codes (e.g., 'P001400' becomes '1400')")
-    parser.add_argument('--pretty', action='store_true', 
+    parser.add_argument('--pretty', action='store_true',
                         help="Pretty-print JSON output (default is compact JSON without spaces)")
-    parser.add_argument('--jobs', type=int, default=0, 
+    parser.add_argument('--jobs', type=int, default=0,
                         help="Number of parallel processes to use (default: 0). Set to 0 for automatic detection.")
-    parser.add_argument('--max-next-stops', type=int, default=None,
-                        help="Limit the number of next stops included in the report (default: all)")
     args = parser.parse_args()
 
     if not args.all_dates and not args.start_date:
-        parser.error('--start-date is required unless --all-dates is specified')
+        parser.error(
+            '--start-date is required unless --all-dates is specified')
     if not args.all_dates and not args.end_date:
         parser.error('--end-date is required unless --all-dates is specified')
     if args.feed_dir and args.feed_url:
         parser.error("Specify either --feed-dir or --feed-url, not both.")
     if not args.feed_dir and not args.feed_url:
-        parser.error("You must specify either a path to the existing feed (unzipped) or a URL to download the GTFS feed from.")
+        parser.error(
+            "You must specify either a path to the existing feed (unzipped) or a URL to download the GTFS feed from.")
     if args.feed_dir and not os.path.exists(args.feed_dir):
         parser.error(f"Feed directory does not exist: {args.feed_dir}")
     return args
@@ -122,45 +119,49 @@ def time_to_seconds(time_str: str) -> int:
     return hours * 3600 + minutes * 60 + seconds
 
 
-def get_stop_arrivals(feed_dir: str, date: str, numeric_stop_code: bool = False, 
-                     max_next_stops: Optional[int] = None) -> Dict[str, List[Dict[str, Any]]]:
+def get_stop_arrivals(
+    feed_dir: str,
+        date: str,
+        numeric_stop_code: bool = False
+) -> Dict[str, List[Dict[str, Any]]]:
     """
     Process trips for the given date and organize stop arrivals.
-    
+
     Args:
         feed_dir: Path to the GTFS feed directory
         date: Date in YYYY-MM-DD format
         numeric_stop_code: If True, strip non-numeric characters from stop codes
-        max_next_stops: Maximum number of next stops to include (None for all)
-        
+
     Returns:
         Dictionary mapping stop_code to lists of arrival information.
     """
     stops = get_all_stops(feed_dir)
     logger.info(f"Found {len(stops)} stops in the feed.")
-    
+
     active_services = get_active_services(feed_dir, date)
     if not active_services:
         logger.info("No active services found for the given date.")
         return {}
-    
-    logger.info(f"Found {len(active_services)} active services for date {date}.")
-    
+
+    logger.info(
+        f"Found {len(active_services)} active services for date {date}.")
+
     trips = get_trips_for_services(feed_dir, active_services)
     total_trip_count = sum(len(trip_list) for trip_list in trips.values())
     logger.info(f"Found {total_trip_count} trips for active services.")
-    
+
     # Get all trip IDs
-    all_trip_ids = [trip.trip_id for trip_list in trips.values() for trip in trip_list]
-    
+    all_trip_ids = [trip.trip_id for trip_list in trips.values()
+                    for trip in trip_list]
+
     # Get stops for all trips
     stops_for_all_trips = get_stops_for_trips(feed_dir, all_trip_ids)
     logger.info(f"Precomputed stops for {len(stops_for_all_trips)} trips.")
-    
+
     # Load routes information
     routes = load_routes(feed_dir)
     logger.info(f"Loaded {len(routes)} routes from feed.")
-    
+
     # Create a reverse lookup from stop_id to stop_code
     stop_id_to_code = {}
     for stop_id, stop in stops.items():
@@ -173,78 +174,77 @@ def get_stop_arrivals(feed_dir: str, date: str, numeric_stop_code: bool = False,
                 # Then convert to integer and back to string to remove leading zeros
                 stop_code = str(int(numeric_code)) if numeric_code else ""
             stop_id_to_code[stop_id] = stop_code
-    
+
     # Organize data by stop_code
     stop_arrivals = {}
-    
+
     for service_id, trip_list in trips.items():
         for trip in trip_list:
             # Get route information
             route_info = routes.get(trip.route_id, {})
             route_short_name = route_info.get('route_short_name', '')
             route_color = route_info.get('route_color', '')
-            
+
             # Get stop times for this trip
             trip_stops = stops_for_all_trips.get(trip.trip_id, [])
-            
+
             for i, stop_time in enumerate(trip_stops):
                 stop_id = stop_time.stop_id
                 stop_code = stop_id_to_code.get(stop_id)
-                
+
                 if not stop_code:
                     continue  # Skip stops without a code
-                
+
                 if stop_code not in stop_arrivals:
                     stop_arrivals[stop_code] = []
-                
+
                 # Get stop information
                 stop = stops.get(stop_id)
                 stop_name = stop.stop_name if stop else "Unknown Stop"
-                
-                # Get next stops in the trip with limit
-                next_stops = []
+
+                next_stop_names = []
                 if i < len(trip_stops) - 1:
-                    # Calculate end index for next stops
-                    end_index = i + 1 + max_next_stops if max_next_stops else len(trip_stops)
-                    for next_stop_time in trip_stops[i+1:end_index]:
-                        next_stop_id = next_stop_time.stop_id
-                        next_stop = stops.get(next_stop_id)
-                        next_stop_code = stop_id_to_code.get(next_stop_id, "")
-                        next_stop_name = next_stop.stop_name if next_stop else "Unknown Stop"
-                        
-                        next_stops.append({
-                            "stop_code": next_stop_code,
-                            "stop_name": next_stop_name,
-                            "arrival_time": next_stop_time.arrival_time,
-                            "departure_time": next_stop_time.departure_time,
-                            "stop_sequence": next_stop_time.stop_sequence,
-                        })
-                
+                    for next_stop_time in trip_stops[i+1:]:
+                        next_stop = stops.get(next_stop_time.stop_id)
+                        next_stop_names.append(next_stop.stop_name if next_stop else "N/A")
+
+                next_streets = []
+                _street_cursor = None
+                for stop_name in next_stop_names:
+                    street_name = get_street_name(stop_name)
+                    if _street_cursor != street_name:
+                        next_streets.append(street_name)
+                        _street_cursor = street_name
+
                 # Convert times to seconds for sorting
                 arrival_seconds = time_to_seconds(stop_time.arrival_time)
                 stop_arrivals[stop_code].append({
-                    "trip_id": trip.trip_id,
+                    "line": {
+                        "name": route_short_name,
+                        "colour": f"#{route_color}" if route_color else "#FFFFFF",
+                    },
+                    "trip": {
+                        "id": trip.trip_id,
+                        "service_id": service_id,
+                        "headsign": trip.headsign,
+                        "direction_id": "OUTBOUND" if trip.direction_id == 0 else "INBOUND" if trip.direction_id == 1 else "UNKNOWN",
+                    },
                     "route_id": trip.route_id,
-                    "line": route_short_name,
-                    "color": route_color,
-                    "headsign": trip.headsign,
-                    "arrival_time": stop_time.arrival_time,
                     "departure_time": stop_time.departure_time,
+                    "arrival_time": stop_time.arrival_time,
                     "stop_sequence": stop_time.stop_sequence,
-                    "stop_name": stop_name,
-                    "service_id": service_id,
                     "shape_dist_traveled": stop_time.shape_dist_traveled,
-                    "next_stops": next_stops,
-                    "arrival_seconds": arrival_seconds
+                    "next_streets": next_streets,
+                    "arrival_seconds": arrival_seconds,
                 })
-    
+
     # Sort each stop's arrivals by arrival time
     for stop_code in stop_arrivals:
         stop_arrivals[stop_code].sort(key=lambda x: x["arrival_seconds"])
         # Remove the temporary sorting key
         for item in stop_arrivals[stop_code]:
             item.pop("arrival_seconds", None)
-    
+
     return stop_arrivals
 
 
@@ -253,20 +253,21 @@ def write_stop_json(output_dir: str, date: str, stop_code: str, arrivals: List[D
     # Create the stops directory for this date
     date_dir = os.path.join(output_dir, "stops", date)
     os.makedirs(date_dir, exist_ok=True)
-    
+
     # Create the JSON file
     file_path = os.path.join(date_dir, f"{stop_code}.json")
-    
+
     with open(file_path, 'w', encoding='utf-8') as f:
-        json.dump(arrivals, f, indent=2 if pretty else None, separators=(",", ":") if not pretty else None, ensure_ascii=False)
-    
+        json.dump(arrivals, f, indent=2 if pretty else None, separators=(
+            ",", ":") if not pretty else None, ensure_ascii=False)
+
     logger.debug(f"Written {len(arrivals)} arrivals to {file_path}")
 
 
 def write_index_json(output_dir: str, stops_summary: Dict[str, Dict[str, int]], pretty: bool):
     """
     Write index JSON files with stop counts.
-    
+
     Args:
         stops_summary: Dictionary mapping dates to dictionaries of stop_code: count
     """
@@ -275,8 +276,13 @@ def write_index_json(output_dir: str, stops_summary: Dict[str, Dict[str, int]], 
     os.makedirs(stops_dir, exist_ok=True)
 
 
-def process_date(feed_dir: str, date: str, output_dir: str, 
-                numeric_stop_code: bool, pretty: bool, max_next_stops: Optional[int]):
+def process_date(
+    feed_dir: str,
+    date: str,
+    output_dir: str,
+    numeric_stop_code: bool,
+    pretty: bool
+) -> tuple[str, Dict[str, int]]:
     """
     Process a single date and write its stop JSON files.
     Returns summary data for index generation.
@@ -284,24 +290,25 @@ def process_date(feed_dir: str, date: str, output_dir: str,
     try:
         logger = get_logger(f"stop_report_{date}")
         logger.info(f"Starting stop report generation for date {date}")
-        
+
         # Get all stop arrivals for the current date
         stop_arrivals = get_stop_arrivals(
-            feed_dir, date, numeric_stop_code, max_next_stops
+            feed_dir, date, numeric_stop_code
         )
-        
+
         if not stop_arrivals:
             logger.warning(f"No stop arrivals found for date {date}")
             return date, {}
-        
+
         # Write individual stop JSON files
         for stop_code, arrivals in stop_arrivals.items():
             write_stop_json(output_dir, date, stop_code, arrivals, pretty)
-        
+
         # Create summary for index
-        stop_summary = {stop_code: len(arrivals) for stop_code, arrivals in stop_arrivals.items()}
+        stop_summary = {stop_code: len(arrivals)
+                        for stop_code, arrivals in stop_arrivals.items()}
         logger.info(f"Processed {len(stop_arrivals)} stops for date {date}")
-        
+
         return date, stop_summary
     except Exception as e:
         logger.error(f"Error processing date {date}: {e}")
@@ -314,9 +321,8 @@ def main():
     feed_url = args.feed_url
     numeric_stop_code = args.numeric_stop_code
     pretty = args.pretty
-    max_next_stops = args.max_next_stops
     jobs = args.jobs
-    
+
     if not feed_url:
         feed_dir = args.feed_dir
     else:
@@ -338,7 +344,7 @@ def main():
     if not date_list:
         logger.error("No valid dates to process.")
         return
-    
+
     # Determine number of jobs for parallel processing
     if jobs <= 0:
         jobs = cpu_count()
@@ -352,28 +358,31 @@ def main():
         try:
             with Pool(processes=jobs) as pool:
                 tasks = [
-                    (feed_dir, date, output_dir, numeric_stop_code, pretty, max_next_stops)
+                    (feed_dir, date, output_dir,
+                     numeric_stop_code, pretty)
                     for date in date_list
                 ]
                 results = pool.starmap(process_date, tasks)
-                
+
                 for date, stop_summary in results:
                     all_stops_summary[date] = stop_summary
         except Exception as e:
             logger.error(f"Error in parallel processing: {e}")
             # Fallback to sequential processing
             for date in date_list:
-                _, stop_summary = process_date(feed_dir, date, output_dir, numeric_stop_code, pretty, max_next_stops)
+                _, stop_summary = process_date(
+                    feed_dir, date, output_dir, numeric_stop_code, pretty)
                 all_stops_summary[date] = stop_summary
     else:
         # Sequential processing
         for date in date_list:
-            _, stop_summary = process_date(feed_dir, date, output_dir, numeric_stop_code, pretty, max_next_stops)
+            _, stop_summary = process_date(
+                feed_dir, date, output_dir, numeric_stop_code, pretty)
             all_stops_summary[date] = stop_summary
 
     # Write index files
     write_index_json(output_dir, all_stops_summary, pretty)
-    
+
     logger.info("Stop report generation completed.")
 
     if feed_url:
