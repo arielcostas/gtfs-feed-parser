@@ -1,6 +1,3 @@
-"""
-Functions for handling GTFS service data.
-"""
 import os
 import datetime
 from src.logger import get_logger
@@ -26,34 +23,68 @@ def get_active_services(feed_dir: str, date: str) -> list[str]:
 
     logger.debug(f"Looking for active services {search_date=} {weekday=}")
 
-    # Check calendar.txt for services active on the given date
     try:
         with open(os.path.join(feed_dir, 'calendar.txt'), 'r', encoding="utf-8") as calendar_file:
             lines = calendar_file.readlines()
-            # If there is only one line (header), log a warning and skip it
             if len(lines) <= 1:
                 logger.warning(
                     "calendar.txt file is empty or has only header line, not processing.")
             else:
+                # First parse the header, get each column's index
+                header = lines[0].strip().split(',')
+                try:
+                    service_id_index = header.index('service_id')
+                    monday_index = header.index('monday')
+                    tuesday_index = header.index('tuesday')
+                    wednesday_index = header.index('wednesday')
+                    thursday_index = header.index('thursday')
+                    friday_index = header.index('friday')
+                    saturday_index = header.index('saturday')
+                    sunday_index = header.index('sunday')
+                except ValueError as e:
+                    logger.error(f"Required column not found in header: {e}")
+                    return active_services
+                logger.debug(f"Header indices: {header}")
+                # Now read the rest of the file, find all services where the day of the week matches
+                weekday_columns = {
+                    0: monday_index,
+                    1: tuesday_index,
+                    2: wednesday_index,
+                    3: thursday_index,
+                    4: friday_index,
+                    5: saturday_index,
+                    6: sunday_index
+                }
+
+                for idx, line in enumerate(lines[1:], 1):
+                    parts = line.strip().split(',')
+                    if len(parts) < len(header):
+                        logger.warning(
+                            f"Skipping malformed line in calendar.txt line {idx+1}: {line.strip()}")
+                        continue
+
+                    service_id = parts[service_id_index]
+                    day_value = parts[weekday_columns[weekday]]
+
+                    if day_value == '1':
+                        active_services.append(service_id)
+                        logger.debug(
+                            f"Found active service: {service_id} for weekday {weekday}")
+
                 logger.debug(
                     "Processing calendar.txt file for active services. NOT IMPLEMENTED.")
-                # For each line in the calendar.txt, check if the service has a '1' for the day of the week
-                # Implementation would go here
     except FileNotFoundError:
         logger.warning("calendar.txt file not found.")
 
-    # Check calendar_dates.txt for exceptions
     try:
         with open(os.path.join(feed_dir, 'calendar_dates.txt'), 'r', encoding="utf-8") as calendar_dates_file:
             lines = calendar_dates_file.readlines()
-            # If there is only one line (header), log a warning and skip it
             if len(lines) <= 1:
                 logger.warning(
                     "calendar_dates.txt file is empty or has only header line, not processing.")
                 logger.debug("Early-returning empty active services list.")
                 return active_services
 
-            # First parse the header, get each column's index
             header = lines[0].strip().split(',')
             try:
                 service_id_index = header.index('service_id')
