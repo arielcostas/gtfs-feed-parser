@@ -22,6 +22,7 @@
         /* Filter button styles */
         .filter-btn { padding: 0.4rem 0.8rem; margin: 0.2rem; border: 1px solid #0074d9; border-radius: 4px; background: #fff; color: #0074d9; cursor: pointer; transition: background 0.2s, color 0.2s; }
         .filter-btn.active { background: #0074d9; color: #fff; }
+        .footer { text-align: center; font-size: 0.85rem; color: #666; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; }
     </style>
 </head>
 <body>
@@ -59,7 +60,7 @@
         </li>
     {% endfor %}
     </ul>
-    <p><a href="../index.html">Back to all dates</a></p>
+    <p><a href="../index.html">Volver al índice global</a></p>
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         const buttons = Array.from(document.querySelectorAll('#line-filters .filter-btn'));
@@ -105,5 +106,8 @@
         });
     });
     </script>
+    <div class="footer">
+        Generado con fecha {{ generated_at.strftime('%Y-%m-%d %H:%M:%S %Z') }}
+    </div>
 </body>
 </html>

@@ -50,6 +50,7 @@ def get_service_report_data(feed_dir: str, service_id: str, trips: List[TripLine
         total_distance_km += distance_km
         
         trip_rows.append({
+            "trip_id": trip.trip_id,
             "route_short_name": trip.route_short_name or trip.route_id,
             "route_colour": trip.route_color or "cccccc",
             "headsign": trip.headsign,

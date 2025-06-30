@@ -108,9 +108,11 @@ def parse_args():
 
 
 def main():
+    from datetime import datetime as dt
     args = parse_args()
     output_dir = args.output_dir
     feed_url = args.feed_url
+    generated_at = dt.now()  # Define at the start of main() for use throughout
     if not feed_url:
         feed_dir = args.feed_dir
     else:
@@ -176,9 +178,83 @@ def main():
                     else:
                         logger.warning(
                             f"Route ID {trip.route_id} not found in routes data.")
+
+                # --- New: Generate trip detail pages ---
+                trips_dir = os.path.join(output_dir, "trips")
+                os.makedirs(trips_dir, exist_ok=True)
+                # Prepare service data with timestamp for service template
+                service_data_with_timestamp = {
+                    "generated_at": generated_at
+                }
+                for trip in trip_list:
+                    try:
+                        trip_id = trip.trip_id
+                        trip_detail_filename = f"trips/{trip_id}.html"
+                        trip_detail_path = os.path.join(output_dir, trip_detail_filename)
+                        # Gather stop sequence and times for this trip
+                        stops_for_trip = stops_for_all_trips.get(trip_id, [])
+                        # Each stop: stop_id, stop_name, arrival_time, departure_time, stop_lat, stop_lon
+                        stop_sequence = []
+                        # Build a lookup for stop_id -> stop_name from all stops
+                        stop_id_to_obj = {}
+                        for stop_id, stop_obj in stops.items():
+                            # stops is a dict with stop_id as key and Stop object as value
+                            stop_id_to_obj[stop_id] = stop_obj
+                        for stop in stops_for_trip:
+                            # Defensive: stop may be a dict or object or even a str (stop_id)
+                            if hasattr(stop, "stop_id"):
+                                stop_id = stop.stop_id
+                                arrival_time = getattr(stop, "arrival_time", None)
+                                departure_time = getattr(stop, "departure_time", None)
+                                stop_lat = getattr(stop, "stop_lat", None)
+                                stop_lon = getattr(stop, "stop_lon", None)
+                            elif isinstance(stop, dict):
+                                stop_id = stop.get("stop_id")
+                                arrival_time = stop.get("arrival_time")
+                                departure_time = stop.get("departure_time")
+                                stop_lat = stop.get("stop_lat")
+                                stop_lon = stop.get("stop_lon")
+                            else:
+                                stop_id = stop
+                                arrival_time = None
+                                departure_time = None
+                                stop_lat = None
+                                stop_lon = None
+                            stop_info = {
+                                "stop_id": stop_id,
+                                "stop_name": stop_id_to_obj.get(stop_id, stop_id).stop_name,
+                                "arrival_time": arrival_time,
+                                "departure_time": departure_time,
+                                "stop_lat": stop_id_to_obj.get(stop_id, stop_id).stop_lat if stop_id in stop_id_to_obj else None,
+                                "stop_lon": stop_id_to_obj.get(stop_id, stop_id).stop_lon if stop_id in stop_id_to_obj else None
+                            }
+                            stop_sequence.append(stop_info)
+                        # Prepare data for template
+                        trip_detail_data = {
+                            "trip_id": trip_id,
+                            "service_id": service_id,
+                            "date": current_date,
+                            "route_short_name": getattr(trip, "route_short_name", None),
+                            "route_color": getattr(trip, "route_color", None),
+                            "stop_sequence": stop_sequence,
+                            "generated_at": generated_at
+                        }
+                        # Render trip detail page
+                        render_and_write_html(
+                            "trip_detail.html.j2",
+                            trip_detail_data,
+                            trip_detail_path
+                        )
+                        # Attach the filename to the trip for linking from service report
+                        trip.trip_detail_filename = trip_detail_filename
+                    except Exception as e:
+                        logger.error(f"Error generating trip detail page for trip {trip_id} on {current_date}: {e}")
+
+                # --- End new trip detail page generation ---
+
                 filename = f"{service_id}_{current_date}.html"
                 file_path = os.path.join(date_dir, filename)
-                write_service_html(file_path, feed_dir, service_id, trip_list, current_date, stops_for_all_trips)
+                write_service_html(file_path, feed_dir, service_id, trip_list, current_date, stops_for_all_trips, service_data_with_timestamp)
                 # Compute summary details for index
                 summary = get_service_report_data(feed_dir, service_id, trip_list, current_date, stops_for_all_trips)
                 # First departure and last arrival
@@ -244,7 +320,7 @@ def main():
             # Write per-date index
             render_and_write_html(
                 "day_index.html.j2",
-                {"date": current_date, "services": generated_services, "day_lines": unique_day_lines},
+                {"date": current_date, "services": generated_services, "day_lines": unique_day_lines, "generated_at": generated_at},
                 os.path.join(date_dir, "index.html")
             )
 
@@ -253,7 +329,7 @@ def main():
     if all_generated_dates:
         render_and_write_html(
             "feed_index.html.j2",
-            {"dates": all_generated_dates},
+            {"dates": all_generated_dates, "generated_at": generated_at.strftime('%Y-%m-%d %H:%M:%S %Z')},
             os.path.join(output_dir, "index.html")
         )
     logger.info("Service report generation completed.")

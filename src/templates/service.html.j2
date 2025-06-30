@@ -169,7 +169,6 @@
     {% for row in trip_rows %}
         {% set current_time = row.first_arrival %}
         {% set current_hour = current_time.split(':')[0]|int %}
-        
         {# Day change marker #}
         {% if current_hour >= 24 and day_changes|length == 0 %}
             <div class="day-change-marker">
@@ -177,7 +176,6 @@
             </div>
             {% set _ = day_changes.append(1) %}
         {% endif %}
-        
         {# Trip container - each trip gets its own container with clear visual separation #}
         <div class="trip-container trip-line-{{ row.route_short_name|replace(' ', '-')|replace('.', '-') }}" data-start="{{ row.first_arrival }}" data-end="{{ row.last_arrival }}">
             <div class="trip-header">
@@ -207,6 +205,9 @@
                     </div>
                     <div class="trip-stop">{{ row.last_stop_name }}</div>
                 </div>
+            </div>
+            <div style="text-align:right; margin:0.5em 1em 0.5em 0;">
+                <a href="../trips/{{ row.trip_id }}.html" target="_blank" style="color:#0074d9; text-decoration:underline; font-size:0.98em;">Ver detalle del viaje &rarr;</a>
             </div>
         </div>
     {% endfor %}
@@ -276,5 +277,8 @@
         }
     });
     </script>
+    <div class="footer">
+        Generado con fecha {{ generated_at.strftime('%Y-%m-%d %H:%M:%S %Z') }}
+    </div>
 </body>
 </html>

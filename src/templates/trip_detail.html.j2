@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Detalle del viaje {{ trip_id }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta rel="robots" content="noindex, nofollow">
+    <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:300,400,700">
+    <style>
+        body {
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #fff;
+            margin: 0 auto;
+            max-width: 800px;
+            padding: 1.5rem;
+        }
+        h1 {
+            text-align: center;
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .meta {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            color: #666;
+        }
+        .trip-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 2rem;
+        }
+        .trip-table th, .trip-table td {
+            border: 1px solid #ddd;
+            padding: 0.5rem 0.7rem;
+            text-align: left;
+        }
+        .trip-table th {
+            background: #f5f5f5;
+        }
+        .trip-table tr:nth-child(even) {
+            background: #fafafa;
+        }
+        #map {
+            width: 100%;
+            height: 350px;
+            margin-bottom: 2rem;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        .footer {
+            margin-top: 2rem;
+            text-align: center;
+            color: #888;
+            font-size: 0.95rem;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 1.5rem;
+            color: #0074d9;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .arrow-icon {
+            color: #FFFFFF;
+            filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.7)) !important;
+
+            font-family: 'Arial', sans-serif !important;
+            font-size: 18px !important;
+            font-weight: 900 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+    </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+    <a class="back-link" href="../index.html">&larr; Volver a servicios</a>
+    <h1>Detalle del viaje {{ trip_id }}</h1>
+    <div class="meta">
+        Ruta: <span style="font-weight:bold; color: #{{ route_color|default('333') }}">{{ route_short_name }}</span>
+    </div>
+    <div id="map"></div>
+    <table class="trip-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Parada</th>
+                <th>Hora llegada</th>
+                <th>Hora salida</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for stop in stop_sequence %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ stop.stop_name }}</td>
+                <td>{{ stop.arrival_time }}</td>
+                <td>{{ stop.departure_time }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div class="footer">
+        Generado con fecha {{ generated_at.strftime('%Y-%m-%d %H:%M:%S %Z') }}
+    </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>
+
+    <script>
+    const stops = [
+        {%- for stop in stop_sequence %}
+        [{{ loop.index }}, "{{ stop.stop_name }}", {{ stop.stop_lat }}, {{ stop.stop_lon }}]{% if not loop.last %},{% endif %}
+        {%- endfor %}
+    ];
+
+    (() => {    
+        if (stops.length == 0) {
+            document.getElementById('map').innerHTML = '<div style="text-align:center;color:#888;padding:2em;">No hay coordenadas para mostrar el mapa.</div>';
+            return;
+        }
+
+        const map = L.map('map').setView([stops[0][2], stops[0][3]], 14);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        
+        const polyline = L.polyline(stops.map(s => [s[2], s[3]]), {
+            color: '#{{ route_color|default('0074d9') }}', 
+            weight: 5, 
+            opacity: 0.8
+        }).addTo(map);
+        
+        // Add a black outline for better contrast
+        const polylineOutline = L.polyline(stops.map(s => [s[2], s[3]]), {
+            color: '#000000',
+            weight: 7,
+            opacity: 0.6
+        }).addTo(map);
+        
+        // Ensure the main line is on top
+        polyline.bringToFront();
+        
+        // Add arrow decorations in the middle of each segment
+        const decorator = L.polylineDecorator(polyline, {
+            patterns: [
+                {
+                    offset: 0,
+                    repeat: 50,
+                    symbol: L.Symbol.marker({
+                        rotate: true,
+                        markerOptions: {
+                            icon: L.divIcon({
+                                className: 'arrow-icon',
+                                html: '▲',
+                                iconSize: [20, 20],
+                                iconAnchor: [10, 10]
+                            })
+                        }
+                    })
+                }
+            ]
+        }).addTo(map);
+        
+        map.fitBounds(polyline.getBounds(), {padding: [20, 20]});
+
+        map.createPane('topMarkers');
+        map.getPane('topMarkers').style.zIndex = 650;
+
+        stops.forEach((coord, idx) => {
+            L.circleMarker([coord[2], coord[3]], {radius: 6, color: '#0074d9', fillColor: '#fff', fillOpacity: 1, weight: 2, pane: 'topMarkers'}).addTo(map)
+                .bindPopup(coord[1]);
+        });
+    })();
+    </script>
+</body>
+</html>

@@ -14,16 +14,57 @@
         h1 { font-size: 1.75rem; margin-bottom: 1.5rem; text-align: center; }
         ul.date-list { list-style: none; padding: 0; margin: 0; }
         ul.date-list li { background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 0.75rem 1rem; margin: 0.5rem 0; text-align: center; }
+        ul.date-list li.current-day { background: #e3f2fd; border-color: #0074d9; }
+        ul.date-list li.current-day a { font-weight: 700; }
         ul.date-list li a { font-size: 1rem; font-weight: 500; color: #0074d9; text-decoration: none; }
         ul.date-list li a:hover { text-decoration: underline; }
+        .footer { text-align: center; font-size: 0.85rem; color: #666; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; }
     </style>
 </head>
 <body>
     <h1>Fechas disponibles de informes de servicio</h1>
     <ul class="date-list">
         {% for date in dates %}
-            <li><a href="{{ date }}/index.html">{{ date }}</a></li>
+            <li data-date="{{ date }}"><a href="{{ date }}/index.html">{{ date }}</a></li>
         {% endfor %}
     </ul>
+
+    <div class="footer">
+        Generado el {{ generated_at }}
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const today = new Date();
+            const todayStr = today.toISOString().slice(0, 10); // YYYY-MM-DD format
+            
+            // Find and highlight today's date
+            const listItems = document.querySelectorAll('ul.date-list li');
+            listItems.forEach(function(li) {
+                const dateStr = li.getAttribute('data-date');
+                if (dateStr === todayStr) {
+                    li.classList.add('current-day');
+                }
+                
+                // Format the date display as "DDDD, dd-MMM"
+                const link = li.querySelector('a');
+                if (link && dateStr) {
+                    try {
+                        const date = new Date(dateStr + 'T00:00:00');
+                        const options = { 
+                            weekday: 'long', 
+                            day: '2-digit', 
+                            month: 'short' 
+                        };
+                        const formattedDate = date.toLocaleDateString('es-ES', options);
+                        link.textContent = formattedDate;
+                    } catch (e) {
+                        // Keep original date format if parsing fails
+                        link.textContent = dateStr;
+                    }
+                }
+            });
+        });
+    </script>
 </body>
 </html>
