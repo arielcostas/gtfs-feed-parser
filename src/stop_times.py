@@ -10,7 +10,7 @@ class StopTime:
     """
     Class representing a stop time entry in the GTFS data.
     """
-    def __init__(self, trip_id: str, arrival_time: str, departure_time: str, stop_id: str, stop_sequence: int, shape_dist_traveled: float):
+    def __init__(self, trip_id: str, arrival_time: str, departure_time: str, stop_id: str, stop_sequence: int, shape_dist_traveled: float | None):
         self.trip_id = trip_id
         self.arrival_time = arrival_time
         self.departure_time = departure_time
@@ -48,6 +48,11 @@ def get_stops_for_trips(feed_dir: str, trip_ids: list[str]) -> dict[str, list[St
             except ValueError as e:
                 logger.error(f"Required column not found in header: {e}")
                 return stops
+            try:
+                shape_dist_index = header.index('shape_dist_traveled')
+            except ValueError:
+                logger.warning("Column 'shape_dist_traveled' not found in stop_times.txt. Distances will be set to None.")
+                shape_dist_index = None
             for line in lines[1:]:
                 parts = line.strip().split(',')
                 if len(parts) < len(header):
@@ -57,13 +62,17 @@ def get_stops_for_trips(feed_dir: str, trip_ids: list[str]) -> dict[str, list[St
                 if trip_id in trip_ids:
                     if trip_id not in stops:
                         stops[trip_id] = []
+                    if shape_dist_index is not None and len(parts) > shape_dist_index and parts[shape_dist_index]:
+                        dist = float(parts[shape_dist_index])
+                    else:
+                        dist = None
                     stops[trip_id].append(StopTime(
                         trip_id=trip_id,
                         arrival_time=parts[arrival_time_index],
                         departure_time=parts[departure_time_index],
                         stop_id=parts[stop_id_index],
                         stop_sequence=int(parts[stop_sequence_index]),
-                        shape_dist_traveled=float(parts[header.index('shape_dist_traveled')])
+                        shape_dist_traveled=dist
                     ))
         # Sort each trip's stops by stop_sequence
         for trip_id in stops:
