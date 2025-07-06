@@ -76,6 +76,7 @@ def get_service_report_data(feed_dir: str, service_id: str, trips: List[TripLine
     # Unique routes for CSS
     unique_routes: dict[str, str] = {}
     for trip in trips:
+        # Always use route_id as fallback for route_short_name, and default color if missing
         short_name = trip.route_short_name or trip.route_id
         color = trip.route_color or "cccccc"
         unique_routes[str(short_name)] = str(color)
