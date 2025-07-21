@@ -28,7 +28,7 @@ def get_all_stops(feed_dir: str) -> Dict[str, Stop]:
                     stop = Stop(
                         stop_id=row['stop_id'],
                         stop_code=row.get('stop_code'),
-                        stop_name=row['stop_desc'].strip() if row.get('stop_desc', '').strip() else row.get('stop_name'),
+                        stop_name=row['stop_name'].strip() if row.get('stop_name', '').strip() else row.get('stop_desc'),
                         stop_lat=float(row['stop_lat']) if row.get('stop_lat') else None,
                         stop_lon=float(row['stop_lon']) if row.get('stop_lon') else None,
                     )
