@@ -92,6 +92,7 @@ def parse_args():
     parser.add_argument('--output-dir', type=str, default="./output/", help='Directory to write reports to (default: ./output/)')
     parser.add_argument('--feed-dir', type=str, help="Path to the feed directory")
     parser.add_argument('--feed-url', type=str, help="URL to download the GTFS feed from (if not using local feed directory)")
+    parser.add_argument('--force-download', action='store_true', help="Force download even if the feed hasn't been modified (only applies when using --feed-url)")
     args = parser.parse_args()
 
     if not args.all_dates and not args.start_date:
@@ -117,7 +118,10 @@ def main():
         feed_dir = args.feed_dir
     else:
         logger.info(f"Downloading GTFS feed from {feed_url}...")
-        feed_dir = download_feed_from_url(feed_url)
+        feed_dir = download_feed_from_url(feed_url, output_dir, args.force_download)
+        if feed_dir is None:
+            logger.info("Download was skipped (feed not modified). Exiting.")
+            return
 
     if args.all_dates:
         all_dates = get_all_feed_dates(feed_dir)
