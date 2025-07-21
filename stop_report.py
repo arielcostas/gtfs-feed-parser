@@ -93,6 +93,8 @@ def parse_args():
                         help="Pretty-print JSON output (default is compact JSON without spaces)")
     parser.add_argument('--jobs', type=int, default=0,
                         help="Number of parallel processes to use (default: 0). Set to 0 for automatic detection.")
+    parser.add_argument('--force-download', action='store_true', 
+                        help="Force download even if the feed hasn't been modified (only applies when using --feed-url)")
     args = parser.parse_args()
 
     if not args.all_dates and not args.start_date:
@@ -327,7 +329,10 @@ def main():
         feed_dir = args.feed_dir
     else:
         logger.info(f"Downloading GTFS feed from {feed_url}...")
-        feed_dir = download_feed_from_url(feed_url)
+        feed_dir = download_feed_from_url(feed_url, output_dir, args.force_download)
+        if feed_dir is None:
+            logger.info("Download was skipped (feed not modified). Exiting.")
+            return
 
     if args.all_dates:
         all_dates = get_all_feed_dates(feed_dir)
