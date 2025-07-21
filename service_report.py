@@ -18,6 +18,10 @@ from src.report_writer import write_service_html
 from src.stop_times import get_stops_for_trips
 from src.routes import load_routes
 from src.report_data import get_service_report_data
+# Service extractor imports
+from src.service_extractor.default import DefaultServiceExtractor
+from src.service_extractor.lcg_muni import LcgMunicipalServiceExtractor
+from src.service_extractor.vgo_muni import VgoMunicipalServiceExtractor
 
 logger = get_logger("service_report")
 
@@ -93,6 +97,7 @@ def parse_args():
     parser.add_argument('--feed-dir', type=str, help="Path to the feed directory")
     parser.add_argument('--feed-url', type=str, help="URL to download the GTFS feed from (if not using local feed directory)")
     parser.add_argument('--force-download', action='store_true', help="Force download even if the feed hasn't been modified (only applies when using --feed-url)")
+    parser.add_argument('--service-extractor', type=str, default="default", help="Service extractor to use (default|lcg_muni|vgo_muni)")
     args = parser.parse_args()
 
     if not args.all_dates and not args.start_date:
@@ -122,6 +127,16 @@ def main():
         if feed_dir is None:
             logger.info("Download was skipped (feed not modified). Exiting.")
             return
+
+
+    # Select service extractor based on argument
+    extractor_arg = getattr(args, 'service_extractor', 'default')
+    if extractor_arg == 'lcg_muni':
+        service_extractor = LcgMunicipalServiceExtractor
+    elif extractor_arg == 'vgo_muni':
+        service_extractor = VgoMunicipalServiceExtractor
+    else:
+        service_extractor = DefaultServiceExtractor
 
     if args.all_dates:
         all_dates = get_all_feed_dates(feed_dir)
@@ -170,6 +185,12 @@ def main():
         date_dir = os.path.join(output_dir, current_date)
         os.makedirs(date_dir, exist_ok=True)
         for service_id, trip_list in trips.items():
+            # Extract human-readable service name using the selected extractor
+            try:
+                service_name = service_extractor.extract_service_name_from_identifier(service_id)
+            except Exception as e:
+                logger.warning(f"Failed to extract service name for {service_id}: {e}")
+                service_name = service_id
             try:
                 # Restore the assignment of route_short_name and route_color to each trip
                 for trip in trip_list:
@@ -287,6 +308,7 @@ def main():
                 # Append enriched service info
                 generated_services.append({
                     "service_id": service_id,
+                    "service_name": service_name,
                     "filename": filename,
                     "first_departure": first_departure,
                     "last_arrival": last_arrival,
