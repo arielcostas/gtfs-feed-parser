@@ -181,7 +181,9 @@
             <div class="trip-header">
                 <div class="route">{{ row.route_short_name }}</div>
                 <div class="headsign">{{ row.headsign }}</div>
-                <div class="distance">{{ row.distance|replace('.', ',') }} km</div>
+                <div class="distance">
+                    {% if row.distance %}{{ row.distance|replace('.', ',') }} km{% endif %}
+                </div>
             </div>
             <div class="trip-details">
                 <div class="trip-leg">
@@ -212,9 +214,11 @@
         </div>
     {% endfor %}
 
-    <div class="total-distance">
-        Total: {{ total_distance|replace('.', ',') }} km
-    </div>
+        {% if total_distance %}
+        <div class="total-distance">
+            Total: {{ total_distance|replace('.', ',') }} km
+        </div>
+        {% endif %}
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         const pageDate = '{{ date }}';

@@ -13,7 +13,7 @@ def get_service_report_data(feed_dir: str, service_id: str, trips: List[TripLine
     total_distance_km = 0
     total_trips = len(trips)
     trip_rows: list[dict[str, Any]] = []
-    
+
     # Helper function to convert time to minutes for sorting
     def time_to_minutes(time_str: str) -> int:
         if not time_str:
@@ -27,7 +27,7 @@ def get_service_report_data(feed_dir: str, service_id: str, trips: List[TripLine
             return hours * 60 + minutes
         except ValueError:
             return 0
-    
+
     # Process each trip
     for trip in trips:
         trip_stops = stops_for_trips.get(trip.trip_id, [])
@@ -35,7 +35,7 @@ def get_service_report_data(feed_dir: str, service_id: str, trips: List[TripLine
             continue
         first_stop = trip_stops[0]
         last_stop = trip_stops[-1]
-        
+
         def stop_info(stop: StopTime) -> Dict[str, Any]:
             s = stops.get(stop.stop_id)
             return {
@@ -43,13 +43,16 @@ def get_service_report_data(feed_dir: str, service_id: str, trips: List[TripLine
                 "code": s.stop_code if s else "Unknown",
                 "arrival": stop.arrival_time if s else None
             }
-            
+
         fs = stop_info(first_stop)
         ls = stop_info(last_stop)
-        distance_km = (last_stop.shape_dist_traveled - first_stop.shape_dist_traveled) / 1000
-        total_distance_km += distance_km
-        
-        trip_rows.append({
+
+        distance_km = None
+        if first_stop.shape_dist_traveled is not None and last_stop.shape_dist_traveled is not None:
+            distance_km = (last_stop.shape_dist_traveled - first_stop.shape_dist_traveled) / 1000
+            total_distance_km += distance_km
+
+        row = {
             "trip_id": trip.trip_id,
             "route_short_name": trip.route_short_name or trip.route_id,
             "route_colour": trip.route_color or "cccccc",
@@ -59,13 +62,17 @@ def get_service_report_data(feed_dir: str, service_id: str, trips: List[TripLine
             "first_arrival": fs["arrival"],
             "last_stop_name": ls["name"],
             "last_stop_code": ls["code"],
-            "last_arrival": ls["arrival"],
-            "distance": f"{distance_km:,.2f}"
-        })
-    
+            "last_arrival": ls["arrival"]
+        }
+
+        if distance_km is not None:
+            row["distance"] = f"{distance_km:,.2f}"
+
+        trip_rows.append(row)
+
     # Sort trip rows by departure time
     trip_rows.sort(key=lambda x: time_to_minutes(x["first_arrival"]))
-    
+
     # Unique routes for CSS
     unique_routes: dict[str, str] = {}
     for trip in trips:
@@ -73,6 +80,7 @@ def get_service_report_data(feed_dir: str, service_id: str, trips: List[TripLine
         short_name = trip.route_short_name or trip.route_id
         color = trip.route_color or "cccccc"
         unique_routes[str(short_name)] = str(color)
+
     css_classes: list[str] = []
     for route_short_name, route_color in unique_routes.items():
         try:
@@ -84,12 +92,14 @@ def get_service_report_data(feed_dir: str, service_id: str, trips: List[TripLine
                 css_classes.append(css_class)
         except (ValueError, IndexError) as e:
             logger.warning(f"Error processing color '{route_color}' for route '{route_short_name}': {e}")
+
     css_classes_str = "\n        ".join(css_classes)
+
     return {
         "service_id": service_id,
         "date": date,
         "trip_rows": trip_rows,
-        "total_distance": f"{total_distance_km:,.2f}",
+        "total_distance": f"{total_distance_km:,.2f}" if total_distance_km > 0 else None,
         "total_trips": f"{total_trips:,}",
         "css_classes": css_classes_str
     }
