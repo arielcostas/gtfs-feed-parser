@@ -3,6 +3,10 @@ from src.service_extractor.default import AbstractServiceExtractor
 
 class LcgMunicipalServiceExtractor(AbstractServiceExtractor):
     @staticmethod
+    def extract_actual_service_id_from_identifier(service_identifier: str) -> str:
+        # For Coruña, the actual ID is the same as the service name
+        return LcgMunicipalServiceExtractor.extract_service_name_from_identifier(service_identifier)
+    @staticmethod
     def extract_service_name_from_identifier(service_identifier: str) -> str:
         """
         Extracts the actual service code from the service identifier for A Coruña GTFS.

@@ -58,6 +58,7 @@ def get_all_feed_dates(feed_dir: str) -> List[str]:
                 # Convert YYYYMMDD to YYYY-MM-DD
                 from datetime import datetime, timedelta
                 # datetime and timedelta are already imported at the top of the file
+                start = datetime.strptime(min_date, '%Y%m%d')
                 end = datetime.strptime(max_date, '%Y%m%d')
                 result: List[str] = []
                 while start <= end:
@@ -157,15 +158,38 @@ def main():
         logger.error("No valid dates to process.")
         return
 
+    # Load static data once outside the date loop for better performance
+    logger.info("Loading static feed data...")
+    stops = get_all_stops(feed_dir)
+    logger.info(f"Found {len(stops)} stops in the feed.")
+    if not stops:
+        logger.error("No stops found in the feed.")
+        return
+    
+    routes = load_routes(feed_dir)
+    logger.info(f"Loaded {len(routes)} routes from feed.")
+    
+    # Load all trips once and reuse (significant performance improvement)
+    logger.info("Loading all trips data...")
+    all_services = []
+    for date in date_list:
+        date_services = get_active_services(feed_dir, date)
+        all_services.extend(date_services)
+    
+    # Remove duplicates while preserving order
+    unique_services = list(dict.fromkeys(all_services))
+    all_trips = get_trips_for_services(feed_dir, unique_services)
+    logger.info(f"Loaded {sum(len(trips) for trips in all_trips.values())} trips for all services.")
+    
+    # Load all stop times once (biggest performance improvement)
+    all_trip_ids = [trip.trip_id for trip_list in all_trips.values() for trip in trip_list]
+    all_stops_for_trips = get_stops_for_trips(feed_dir, all_trip_ids)
+    logger.info(f"Loaded stop times for {len(all_stops_for_trips)} trips.")
+
     # Process each date in date_list
     for current_date in date_list:
         generated_services: list[dict[str, str]] = []
         logger.info(f"Starting service report generation for date {current_date}")
-        stops = get_all_stops(feed_dir)
-        logger.info(f"Found {len(stops)} stops in the feed.")
-        if not stops:
-            logger.info("No stops found in the feed.")
-            continue
         active_services = get_active_services(feed_dir, current_date)
         if active_services:
             logger.info(
@@ -173,24 +197,46 @@ def main():
         else:
             logger.info("No active services found for the given date.")
             continue
-        trips = get_trips_for_services(feed_dir, active_services)
+        
+        # Filter pre-loaded trips by active services for this date
+        trips = {service_id: trip_list for service_id, trip_list in all_trips.items() 
+                if service_id in active_services}
         total_trip_count = sum(len(trip_list) for trip_list in trips.values())
         logger.info(f"Found {total_trip_count} trips for active services.")
-        all_trip_ids = [trip.trip_id for trip_list in trips.values() for trip in trip_list]
-        stops_for_all_trips = get_stops_for_trips(feed_dir, all_trip_ids)
-        logger.info(f"Precomputed stops for {len(stops_for_all_trips)} trips.")
-        routes = load_routes(feed_dir)
-        logger.info(f"Loaded {len(routes)} routes from feed.")
+        
+        # Filter pre-loaded stop times by trips for this date
+        date_trip_ids = [trip.trip_id for trip_list in trips.values() for trip in trip_list]
+        stops_for_all_trips = {trip_id: stops for trip_id, stops in all_stops_for_trips.items()
+                              if trip_id in date_trip_ids}
+        logger.info(f"Using stop times for {len(stops_for_all_trips)} trips.")
         # Prepare output directory for this date
         date_dir = os.path.join(output_dir, current_date)
         os.makedirs(date_dir, exist_ok=True)
+        # Group trips by actual_service_id
+        grouped_trips = {}
+        service_id_to_name = {}
+        canonical_to_original_ids = {}
         for service_id, trip_list in trips.items():
-            # Extract human-readable service name using the selected extractor
+            try:
+                actual_service_id = service_extractor.extract_actual_service_id_from_identifier(service_id)
+            except Exception as e:
+                logger.warning(f"Failed to extract actual service id for {service_id}: {e}")
+                actual_service_id = service_id
             try:
                 service_name = service_extractor.extract_service_name_from_identifier(service_id)
             except Exception as e:
                 logger.warning(f"Failed to extract service name for {service_id}: {e}")
                 service_name = service_id
+            if actual_service_id not in grouped_trips:
+                grouped_trips[actual_service_id] = []
+                service_id_to_name[actual_service_id] = service_name
+                canonical_to_original_ids[actual_service_id] = set()
+            grouped_trips[actual_service_id].extend(trip_list)
+            canonical_to_original_ids[actual_service_id].add(service_id)
+
+        for actual_service_id, trip_list in grouped_trips.items():
+            service_name = service_id_to_name.get(actual_service_id, actual_service_id)
+            original_service_ids = sorted(canonical_to_original_ids.get(actual_service_id, []))
             try:
                 # Restore the assignment of route_short_name and route_color to each trip
                 for trip in trip_list:
@@ -231,20 +277,14 @@ def main():
                                 stop_id = stop.stop_id
                                 arrival_time = getattr(stop, "arrival_time", None)
                                 departure_time = getattr(stop, "departure_time", None)
-                                stop_lat = getattr(stop, "stop_lat", None)
-                                stop_lon = getattr(stop, "stop_lon", None)
                             elif isinstance(stop, dict):
                                 stop_id = stop.get("stop_id")
                                 arrival_time = stop.get("arrival_time")
                                 departure_time = stop.get("departure_time")
-                                stop_lat = stop.get("stop_lat")
-                                stop_lon = stop.get("stop_lon")
                             else:
                                 stop_id = stop
                                 arrival_time = None
                                 departure_time = None
-                                stop_lat = None
-                                stop_lon = None
                             stop_info = {
                                 "stop_id": stop_id,
                                 "stop_name": stop_id_to_obj.get(stop_id, stop_id).stop_name,
@@ -254,7 +294,7 @@ def main():
                                 "stop_lon": stop_id_to_obj.get(stop_id, stop_id).stop_lon if stop_id in stop_id_to_obj else None
                             }
                             stop_sequence.append(stop_info)
-                        # Prepare data for template
+
                         trip_detail_data = {
                             "trip_id": trip_id,
                             "service_id": service_id,
@@ -277,11 +317,15 @@ def main():
 
                 # --- End new trip detail page generation ---
 
-                filename = f"{service_id}_{current_date}.html"
+                filename = f"{actual_service_id}_{current_date}.html"
                 file_path = os.path.join(date_dir, filename)
-                write_service_html(file_path, feed_dir, service_id, trip_list, current_date, stops_for_all_trips, service_data_with_timestamp)
+                # Add service_name to extra data for the report
+                extra_data = dict(service_data_with_timestamp)
+                extra_data["service_name"] = service_name
+                extra_data["original_service_ids"] = original_service_ids
+                write_service_html(file_path, feed_dir, actual_service_id, trip_list, current_date, stops_for_all_trips, extra_data, stops)
                 # Compute summary details for index
-                summary = get_service_report_data(feed_dir, service_id, trip_list, current_date, stops_for_all_trips)
+                summary = get_service_report_data(feed_dir, actual_service_id, trip_list, current_date, stops_for_all_trips, stops)
                 # First departure and last arrival
                 first_departure = summary["trip_rows"][0]["first_arrival"] if summary.get("trip_rows") else None
                 last_arrival = max(r.get("last_arrival") for r in summary.get("trip_rows", [])) if summary.get("trip_rows") else None
@@ -307,8 +351,9 @@ def main():
                         })
                 # Append enriched service info
                 generated_services.append({
-                    "service_id": service_id,
+                    "service_id": actual_service_id,
                     "service_name": service_name,
+                    "original_service_ids": original_service_ids,
                     "filename": filename,
                     "first_departure": first_departure,
                     "last_arrival": last_arrival,

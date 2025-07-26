@@ -26,10 +26,7 @@ def get_active_services(feed_dir: str, date: str) -> list[str]:
     try:
         with open(os.path.join(feed_dir, 'calendar.txt'), 'r', encoding="utf-8") as calendar_file:
             lines = calendar_file.readlines()
-            if len(lines) <= 1:
-                logger.warning(
-                    "calendar.txt file is empty or has only header line, not processing.")
-            else:
+            if len(lines) >1:
                 # First parse the header, get each column's index
                 header = lines[0].strip().split(',')
                 try:

@@ -40,7 +40,10 @@
     {% for service in services %}
         <li>
             <div class="service-card-title">
-                <a href="{{ service.filename }}">Servicio {{ service.service_id }}</a>
+                <a href="{{ service.filename }}">Servicio {{ service.service_name or service.service_id }}</a>
+                {% if service.original_service_ids and service.original_service_ids|length > 1 %}
+                    <div class="service-original-ids">IDs: {{ service.original_service_ids|join(', ') }}</div>
+                {% endif %}
             </div>
             <div class="service-card-info">
                 {% if service.first_departure and service.last_arrival %}

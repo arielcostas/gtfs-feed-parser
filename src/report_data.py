@@ -7,26 +7,27 @@ from typing import List, Dict, Any
 from src.trips import TripLine
 from src.stop_times import StopTime
 
-def get_service_report_data(feed_dir: str, service_id: str, trips: List[TripLine], date: str, stops_for_trips: Dict[str, List[StopTime]]) -> Dict[str, Any]:
+def get_service_report_data(feed_dir: str, service_id: str, trips: List[TripLine], date: str, stops_for_trips: Dict[str, List[StopTime]], stops: Dict[str, Any] = None) -> Dict[str, Any]:
     logger = get_logger("report_data")
-    stops = get_all_stops(feed_dir)
+    # Allow passing stops to avoid reloading them repeatedly
+    if stops is None:
+        stops = get_all_stops(feed_dir)
+    
     total_distance_km = 0
     total_trips = len(trips)
     trip_rows: list[dict[str, Any]] = []
 
-    # Helper function to convert time to minutes for sorting
+    # Helper function to convert time to minutes for sorting (optimized)
     def time_to_minutes(time_str: str) -> int:
         if not time_str:
             return 0
-        parts = time_str.split(':')
-        if len(parts) != 3:
-            return 0
         try:
-            hours = int(parts[0])
-            minutes = int(parts[1])
-            return hours * 60 + minutes
-        except ValueError:
-            return 0
+            parts = time_str.split(':', 2)  # Limit splits to improve performance
+            if len(parts) >= 2:
+                return int(parts[0]) * 60 + int(parts[1])
+        except (ValueError, IndexError):
+            pass
+        return 0
 
     # Process each trip
     for trip in trips:
@@ -95,7 +96,8 @@ def get_service_report_data(feed_dir: str, service_id: str, trips: List[TripLine
 
     css_classes_str = "\n        ".join(css_classes)
 
-    return {
+    # Allow for service_name to be injected via extra_data (merged in report_writer)
+    result = {
         "service_id": service_id,
         "date": date,
         "trip_rows": trip_rows,
@@ -103,3 +105,4 @@ def get_service_report_data(feed_dir: str, service_id: str, trips: List[TripLine
         "total_trips": f"{total_trips:,}",
         "css_classes": css_classes_str
     }
+    return result

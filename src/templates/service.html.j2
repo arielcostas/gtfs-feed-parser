@@ -3,11 +3,11 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Informe de Servicio {{ service_id }}</title>
+    <title>Informe de Servicio {{ service_name or service_id }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta rel="robots" content="noindex, nofollow">
     <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:300,400,700">
-    <meta name="description" content="Informe de servicio {{ service_id }} del {{ date }}. Incluye detalles de viaje, distancias y paradas.">
+    <meta name="description" content="Informe de servicio {{ service_name or service_id }} del {{ date }}. Incluye detalles de viaje, distancias y paradas.">
     <style>
         * {
             box-sizing: border-box;
@@ -160,7 +160,10 @@
 </head>
 
 <body>
-    <h1>Servicio {{ service_id }}</h1>
+    <h1>Servicio {{ service_name or service_id }}</h1>
+    {% if original_service_ids and original_service_ids|length > 1 %}
+        <div class="service-original-ids">IDs agrupados: {{ original_service_ids|join(', ') }}</div>
+    {% endif %}
     <div class="navigation">
         <a href="../index.html">Servicios</a> &gt; <a href="./index.html">{{ date }}</a>
     </div>

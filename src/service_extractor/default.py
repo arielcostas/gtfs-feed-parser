@@ -1,15 +1,27 @@
 from abc import abstractmethod
 
 
+
 class AbstractServiceExtractor:
     """
     Abstract base class for service extractors.
     """
+    @staticmethod
     @abstractmethod
-    def extract_service_name_from_identifier(self, service_identifier: str) -> str:
+    def extract_service_name_from_identifier(service_identifier: str) -> str:
         pass
 
+    @staticmethod
+    def extract_actual_service_id_from_identifier(service_identifier: str) -> str:
+        """
+        Returns the canonical service ID for grouping. Default: returns the input.
+        """
+        return service_identifier
+
 class DefaultServiceExtractor(AbstractServiceExtractor):
+    @staticmethod
+    def extract_actual_service_id_from_identifier(service_identifier: str) -> str:
+        return service_identifier
     @staticmethod
     def extract_service_name_from_identifier(service_identifier: str) -> str:
         """

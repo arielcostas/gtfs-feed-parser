@@ -31,49 +31,55 @@ def get_stops_for_trips(feed_dir: str, trip_ids: list[str]) -> dict[str, list[St
     Returns:
         dict[str, list[StopTime]]: Dictionary mapping trip IDs to lists of StopTime objects (ordered by stop_sequence).
     """
+    import csv
+    
     stops: dict[str, list[StopTime]] = {}
+    # Convert trip_ids to a set for O(1) lookup instead of O(n)
+    trip_ids_set = set(trip_ids)
+    
     try:
-        with open(os.path.join(feed_dir, 'stop_times.txt'), 'r', encoding="utf-8") as stop_times_file:
-            lines = stop_times_file.readlines()
-            if len(lines) <= 1:
-                logger.warning("stop_times.txt file is empty or has only header line, not processing.")
+        with open(os.path.join(feed_dir, 'stop_times.txt'), 'r', encoding="utf-8", newline='') as stop_times_file:
+            # Use csv.DictReader for better performance and cleaner code
+            reader = csv.DictReader(stop_times_file)
+            
+            # Check for required columns
+            required_columns = ['trip_id', 'arrival_time', 'departure_time', 'stop_id', 'stop_sequence']
+            missing_columns = [col for col in required_columns if col not in reader.fieldnames]
+            if missing_columns:
+                logger.error(f"Required columns not found in header: {missing_columns}")
                 return stops
-            header = lines[0].strip().split(',')
-            try:
-                trip_id_index = header.index('trip_id')
-                arrival_time_index = header.index('arrival_time')
-                departure_time_index = header.index('departure_time')
-                stop_id_index = header.index('stop_id')
-                stop_sequence_index = header.index('stop_sequence')
-            except ValueError as e:
-                logger.error(f"Required column not found in header: {e}")
-                return stops
-            try:
-                shape_dist_index = header.index('shape_dist_traveled')
-            except ValueError:
+            
+            has_shape_dist = 'shape_dist_traveled' in reader.fieldnames
+            if not has_shape_dist:
                 logger.warning("Column 'shape_dist_traveled' not found in stop_times.txt. Distances will be set to None.")
-                shape_dist_index = None
-            for line in lines[1:]:
-                parts = line.strip().split(',')
-                if len(parts) < len(header):
-                    logger.warning(f"Skipping malformed line in stop_times.txt: {line.strip()}")
-                    continue
-                trip_id = parts[trip_id_index]
-                if trip_id in trip_ids:
+            
+            for row in reader:
+                trip_id = row['trip_id']
+                if trip_id in trip_ids_set:
                     if trip_id not in stops:
                         stops[trip_id] = []
-                    if shape_dist_index is not None and len(parts) > shape_dist_index and parts[shape_dist_index]:
-                        dist = float(parts[shape_dist_index])
-                    else:
-                        dist = None
-                    stops[trip_id].append(StopTime(
-                        trip_id=trip_id,
-                        arrival_time=parts[arrival_time_index],
-                        departure_time=parts[departure_time_index],
-                        stop_id=parts[stop_id_index],
-                        stop_sequence=int(parts[stop_sequence_index]),
-                        shape_dist_traveled=dist
-                    ))
+                    
+                    # Parse shape distance if available
+                    dist = None
+                    if has_shape_dist and row['shape_dist_traveled']:
+                        try:
+                            dist = float(row['shape_dist_traveled'])
+                        except ValueError:
+                            pass  # Keep dist as None if parsing fails
+                    
+                    try:
+                        stops[trip_id].append(StopTime(
+                            trip_id=trip_id,
+                            arrival_time=row['arrival_time'],
+                            departure_time=row['departure_time'],
+                            stop_id=row['stop_id'],
+                            stop_sequence=int(row['stop_sequence']),
+                            shape_dist_traveled=dist
+                        ))
+                    except ValueError as e:
+                        logger.warning(f"Error parsing stop_sequence for trip {trip_id}: {e}")
+                        continue
+        
         # Sort each trip's stops by stop_sequence
         for trip_id in stops:
             stops[trip_id].sort(key=lambda st: st.stop_sequence)
