@@ -8,15 +8,9 @@ import traceback
 from src.cli_parser import create_service_report_parser, CommonArgumentParser
 from src.orchestrators import generate_service_reports_orchestrator, prepare_feed_directory
 from src.logger import get_logger
+from src.report_writer import write_service_html, render_and_write_html
 
 logger = get_logger("service_report")
-
-
-def render_and_write_html(template_name: str, data: Dict[str, Any], output_path: str):
-    from src.report_render import render_html_report
-    html = render_html_report(template_name, data)
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(html)
 
 
 def parse_args():

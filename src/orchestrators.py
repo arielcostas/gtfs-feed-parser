@@ -20,7 +20,7 @@ from .stop_times import get_stops_for_trips
 from .routes import load_routes
 from .report_data import get_service_report_data_legacy
 from .report_render import render_html_report
-from .report_writer import write_service_html
+from .report_writer import write_service_html, write_index_json
 from .shapes import load_shapes, shapes_to_geojson
 from .street_name import get_street_name
 from .utils import create_stop_id_to_code_mapping, time_to_seconds
@@ -174,11 +174,24 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
                         logger.warning(f"Route ID {trip.route_id} not found in routes data.")
                 
                 # Generate and write service HTML
-                write_service_html(output_dir, current_date, {
-                    "service_id": actual_service_id,
+                # Create proper filename and path
+                filename = f"{actual_service_id}.html"
+                date_dir = os.path.join(output_dir, current_date)
+                os.makedirs(date_dir, exist_ok=True)
+                file_path = os.path.join(date_dir, filename)
+                
+                # Prepare extra data
+                extra_data = {
                     "service_name": service_name,
-                    "trips": trip_list
-                }, generated_at)
+                    "generated_at": generated_at
+                }
+                
+                # Filter stops for trips for this service
+                stops_for_service_trips = {trip_id: stops for trip_id, stops in all_stops_for_trips.items() 
+                                         if any(trip.trip_id == trip_id for trip in trip_list)}
+                
+                write_service_html(file_path, feed_dir, actual_service_id, trip_list, current_date, 
+                                 stops_for_service_trips, extra_data, stops)
                 
                 generated_services.append({
                     "service_id": actual_service_id,
@@ -354,19 +367,6 @@ def generate_stop_reports_orchestrator(feed_dir: str, output_dir: str,
         'total_dates': len(date_list),
         'total_stops': sum(summary['total_stops'] for summary in all_stops_summary.values())
     }
-
-
-def write_index_json(output_dir: str, stops_summary: Dict[str, Any], pretty: bool = False):
-    """Write index JSON files for stop reports."""
-    # Write the index.json file
-    index_filepath = os.path.join(output_dir, "index.json")
-    with open(index_filepath, 'w', encoding='utf-8') as f:
-        if pretty:
-            json.dump(stops_summary, f, ensure_ascii=False, indent=2)
-        else:
-            json.dump(stops_summary, f, ensure_ascii=False, separators=(',', ':'))
-    
-    logger.info(f"Written index file: {index_filepath}")
 
 
 def generate_geojson_reports_orchestrator(feed_dir: str, output_dir: str, 

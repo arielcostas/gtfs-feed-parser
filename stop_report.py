@@ -18,6 +18,7 @@ from src.street_name import get_street_name
 from src.trips import get_trips_for_services
 from src.stop_times import get_stops_for_trips
 from src.routes import load_routes
+from src.report_writer import write_stop_json, write_index_json
 
 logger = get_logger("stop_report")
 
@@ -197,32 +198,6 @@ def get_stop_arrivals(
             item.pop("arrival_seconds", None)
 
     return stop_arrivals
-
-
-def write_stop_json(output_dir: str, date: str, stop_code: str, arrivals: List[Dict[str, Any]], pretty: bool):
-    """Write the stop arrivals to a JSON file."""
-    # Create the stops directory for this date
-    date_dir = os.path.join(output_dir, "stops", date)
-    os.makedirs(date_dir, exist_ok=True)
-
-    # Create the JSON file
-    file_path = os.path.join(date_dir, f"{stop_code}.json")
-
-    with open(file_path, 'w', encoding='utf-8') as f:
-        json.dump(arrivals, f, indent=2 if pretty else None, separators=(
-            ",", ":") if not pretty else None, ensure_ascii=False)
-
-
-def write_index_json(output_dir: str, stops_summary: Dict[str, Dict[str, int]], pretty: bool):
-    """
-    Write index JSON files with stop counts.
-
-    Args:
-        stops_summary: Dictionary mapping dates to dictionaries of stop_code: count
-    """
-    # Create the stops directory
-    stops_dir = os.path.join(output_dir, "stops")
-    os.makedirs(stops_dir, exist_ok=True)
 
 
 def process_date(
