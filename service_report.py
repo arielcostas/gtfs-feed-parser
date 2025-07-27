@@ -11,6 +11,7 @@ from typing import List, Dict, Any
 
 from src.download import download_feed_from_url
 from src.logger import get_logger
+from src.common import get_all_feed_dates, date_range
 from src.stops import get_all_stops
 from src.services import get_active_services
 from src.trips import get_trips_for_services
@@ -24,59 +25,6 @@ from src.service_extractor.lcg_muni import LcgMunicipalServiceExtractor
 from src.service_extractor.vgo_muni import VgoMunicipalServiceExtractor
 
 logger = get_logger("service_report")
-
-
-def date_range(start: str, end: str):
-    start_dt = datetime.strptime(start, "%Y-%m-%d")
-    end_dt = datetime.strptime(end, "%Y-%m-%d")
-    while start_dt <= end_dt:
-        yield start_dt.strftime("%Y-%m-%d")
-        start_dt += timedelta(days=1)
-
-
-def get_all_feed_dates(feed_dir: str) -> List[str]:
-    """
-    Returns all dates the feed is valid for, using calendar.txt if present, else calendar_dates.txt.
-    """
-    import csv
-    import os
-    calendar_path = os.path.join(feed_dir, 'calendar.txt')
-    calendar_dates_path = os.path.join(feed_dir, 'calendar_dates.txt')
-    # Try calendar.txt first
-    if os.path.exists(calendar_path):
-        with open(calendar_path, encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            start_dates: List[str] = []
-            end_dates: List[str] = []
-            for row in reader:
-                if row.get('start_date') and row.get('end_date'):
-                    start_dates.append(row['start_date'])
-                    end_dates.append(row['end_date'])
-            if start_dates and end_dates:
-                min_date = min(start_dates)
-                max_date = max(end_dates)
-                # Convert YYYYMMDD to YYYY-MM-DD
-                from datetime import datetime, timedelta
-                # datetime and timedelta are already imported at the top of the file
-                start = datetime.strptime(min_date, '%Y%m%d')
-                end = datetime.strptime(max_date, '%Y%m%d')
-                result: List[str] = []
-                while start <= end:
-                    result.append(start.strftime('%Y-%m-%d'))
-                    start += timedelta(days=1)
-                return result
-    # Fallback: use calendar_dates.txt
-    if os.path.exists(calendar_dates_path):
-        with open(calendar_dates_path, encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            dates: set[str] = set()
-            for row in reader:
-                if row.get('exception_type') == '1' and row.get('date'):
-                    # Convert YYYYMMDD to YYYY-MM-DD
-                    d = row['date']
-                    dates.add(f"{d[:4]}-{d[4:6]}-{d[6:]}" )
-            return sorted(dates)
-    return []
 
 
 def render_and_write_html(template_name: str, data: Dict[str, Any], output_path: str):
@@ -297,10 +245,11 @@ def main():
 
                         trip_detail_data = {
                             "trip_id": trip_id,
-                            "service_id": service_id,
+                            "service_id": trip.service_id,  # always original GTFS service_id
                             "date": current_date,
                             "route_short_name": getattr(trip, "route_short_name", None),
                             "route_color": getattr(trip, "route_color", None),
+                            "shape_id": getattr(trip, "shape_id", None),  # always original GTFS shape_id
                             "stop_sequence": stop_sequence,
                             "generated_at": generated_at
                         }

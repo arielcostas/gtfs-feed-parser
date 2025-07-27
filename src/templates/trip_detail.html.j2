@@ -46,6 +46,29 @@
             margin-bottom: 2rem;
             border-radius: 8px;
             border: 1px solid #ddd;
+            position: relative;
+        }
+        #map.fullscreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 9999;
+            border-radius: 0;
+            margin: 0;
+        }
+        .loading-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 20px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            z-index: 1001;
+            display: none;
         }
         .footer {
             margin-top: 2rem;
@@ -74,7 +97,11 @@
             justify-content: center !important;
         }
     </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.locatecontrol/dist/L.Control.Locate.min.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="preload" as="script" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+    <link rel="preload" as="script" href="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js">
+    <link rel="preload" as="script" href="https://unpkg.com/leaflet.locatecontrol/dist/L.Control.Locate.min.js">
 </head>
 <body>
     <a class="back-link" href="../index.html">&larr; Volver a servicios</a>
@@ -82,7 +109,9 @@
     <div class="meta">
         Ruta: <span style="font-weight:bold; color: #{{ route_color|default('333') }}">{{ route_short_name }}</span>
     </div>
-    <div id="map"></div>
+    <div id="map">
+        <div class="loading-indicator" id="loading-indicator">Cargando...</div>
+    </div>
     <table class="trip-table">
         <thead>
             <tr>
@@ -108,6 +137,7 @@
     </div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>
+    <script src="https://unpkg.com/leaflet.locatecontrol/dist/L.Control.Locate.min.js"></script>
 
     <script>
     const stops = [
@@ -115,6 +145,8 @@
         [{{ loop.index }}, "{{ stop.stop_name }}", {{ stop.stop_lat }}, {{ stop.stop_lon }}]{% if not loop.last %},{% endif %}
         {%- endfor %}
     ];
+    
+    const shapeId = {{ ("'" + shape_id + "'") if shape_id else "null" }};
 
     (() => {    
         if (stops.length == 0) {
@@ -122,58 +154,111 @@
             return;
         }
 
-        const map = L.map('map').setView([stops[0][2], stops[0][3]], 14);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png', {
-            maxZoom: 19,
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
-        
-        const polyline = L.polyline(stops.map(s => [s[2], s[3]]), {
-            color: '#{{ route_color|default('0074d9') }}', 
-            weight: 5, 
-            opacity: 0.8
-        }).addTo(map);
-        
-        // Add a black outline for better contrast
-        const polylineOutline = L.polyline(stops.map(s => [s[2], s[3]]), {
-            color: '#000000',
-            weight: 7,
-            opacity: 0.6
-        }).addTo(map);
-        
-        // Ensure the main line is on top
-        polyline.bringToFront();
-        
-        // Add arrow decorations in the middle of each segment
-        const decorator = L.polylineDecorator(polyline, {
-            patterns: [
-                {
-                    offset: 0,
-                    repeat: 50,
-                    symbol: L.Symbol.marker({
-                        rotate: true,
-                        markerOptions: {
-                            icon: L.divIcon({
-                                className: 'arrow-icon',
-                                html: '▲',
-                                iconSize: [20, 20],
-                                iconAnchor: [10, 10]
-                            })
-                        }
-                    })
-                }
-            ]
-        }).addTo(map);
-        
-        map.fitBounds(polyline.getBounds(), {padding: [20, 20]});
+        // --- Layer persistence logic ---
+        const LAYER_KEY = 'gtfs_trip_map_last_layer';
+        const tileLayers = {
+            'Voyager': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors, © CartoDB'
+            }),
+            'Positron': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors, © CartoDB'
+            }),
+            'IGN Base': L.tileLayer('https://tms-ign-base.idee.es/1.0.0/IGNBaseTodo/{z}/{x}/{-y}.jpeg', {
+                maxZoom: 19,
+                attribution: '© Instituto Geográfico Nacional de España, © IGN Base Todo'
+            }),
+            'IGN Satélite': L.tileLayer('https://tms-pnoa-ma.idee.es/1.0.0/pnoa-ma/{z}/{x}/{-y}.jpeg', {
+                maxZoom: 19,
+                attribution: '© Instituto Geográfico Nacional de España, © PNOA-MA'
+            }),
+            'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }),
+        };
+        // Determine which layer to use by default
+        let defaultLayerName = localStorage.getItem(LAYER_KEY) || 'Voyager';
+        let defaultLayer = tileLayers[defaultLayerName] || tileLayers['Voyager'];
 
+        // Initialize the map with custom control positions
+        const map = L.map('map', {
+            zoomControl: false,
+            layers: [defaultLayer]
+        }).setView([stops[0][2], stops[0][3]], 14);
+
+        L.control.zoom({ position: 'topright' }).addTo(map);
+
+        // Add layer control and listen for changes
+        const layersControl = L.control.layers(tileLayers, null, { position: 'bottomleft' }).addTo(map);
+        map.on('baselayerchange', function(e) {
+            localStorage.setItem(LAYER_KEY, e.name);
+        });
+
+        L.control.locate({
+            position: 'topright',
+            flyTo: true,
+            keepCurrentZoomLevel: true,
+            showCompass: true,
+            strings: { title: 'Mi ubicación' }
+        }).addTo(map);
+        
+        // Create stop markers pane (always on top)
         map.createPane('topMarkers');
         map.getPane('topMarkers').style.zIndex = 650;
 
+        // Add stop markers
+        const stopMarkers = [];
         stops.forEach((coord, idx) => {
-            L.circleMarker([coord[2], coord[3]], {radius: 6, color: '#0074d9', fillColor: '#fff', fillOpacity: 1, weight: 2, pane: 'topMarkers'}).addTo(map)
-                .bindPopup(coord[1]);
+            const marker = L.circleMarker([coord[2], coord[3]], {
+                radius: 6, 
+                color: '#0074d9', 
+                fillColor: '#fff', 
+                fillOpacity: 1, 
+                weight: 2, 
+                pane: 'topMarkers'
+            }).addTo(map).bindPopup(coord[1]);
+            stopMarkers.push(marker);
         });
+        // Show shape if available, else fit bounds to stops
+        if (shapeId) {
+            const loadingIndicator = document.getElementById('loading-indicator');
+            const loadShape = async () => {
+                try {
+                    loadingIndicator.style.display = 'block';
+                    const response = await fetch(`../shapes/${shapeId}.geojson`);
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const shapeData = await response.json();
+                    if (shapeData.geometry && shapeData.geometry.coordinates) {
+                        const shapeCoords = shapeData.geometry.coordinates.map(coord => [coord[1], coord[0]]);
+                        const shapePolyline = L.polyline(shapeCoords, {
+                            color: '#{{ route_color|default('0074d9') }}',
+                            weight: 5,
+                            opacity: 0.9
+                        }).addTo(map);
+                        const shapeOutline = L.polyline(shapeCoords, {
+                            color: '#000000',
+                            weight: 7,
+                            opacity: 0.6
+                        }).addTo(map);
+                        map.fitBounds(shapePolyline.getBounds(), {padding: [20, 20]});
+                    }
+                } catch (error) {
+                    console.warn('Could not load shape data:', error);
+                    // fallback to stops
+                    const initialBounds = L.latLngBounds(stops.map(s => [s[2], s[3]]));
+                    map.fitBounds(initialBounds, {padding: [20, 20]});
+                } finally {
+                    loadingIndicator.style.display = 'none';
+                }
+            };
+            loadShape();
+        } else {
+            const initialBounds = L.latLngBounds(stops.map(s => [s[2], s[3]]));
+            map.fitBounds(initialBounds, {padding: [20, 20]});
+        }
+        
     })();
     </script>
 </body>

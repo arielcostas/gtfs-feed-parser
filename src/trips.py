@@ -10,17 +10,18 @@ class TripLine:
     """
     Class representing a trip line in the GTFS data.
     """
-    def __init__(self, route_id: str, service_id: str, trip_id: str, headsign: str, direction_id: int):
+    def __init__(self, route_id: str, service_id: str, trip_id: str, headsign: str, direction_id: int, shape_id: str = None):
         self.route_id = route_id
         self.service_id = service_id
         self.trip_id = trip_id
         self.headsign = headsign
         self.direction_id = direction_id
+        self.shape_id = shape_id
         self.route_short_name = ""
         self.route_color = ""
 
     def __str__(self):
-        return f"TripLine({self.route_id=}, {self.service_id=}, {self.trip_id=}, {self.headsign=}, {self.direction_id=})"
+        return f"TripLine({self.route_id=}, {self.service_id=}, {self.trip_id=}, {self.headsign=}, {self.direction_id=}, {self.shape_id=})"
 
 
 def get_trips_for_services(feed_dir: str, service_ids: list[str]) -> dict[str, list[TripLine]]:
@@ -54,6 +55,13 @@ def get_trips_for_services(feed_dir: str, service_ids: list[str]) -> dict[str, l
                 logger.error(f"Required column not found in header: {e}")
                 return trips
 
+            # Check if shape_id column exists
+            shape_id_index = None
+            if 'shape_id' in header:
+                shape_id_index = header.index('shape_id')
+            else:
+                logger.warning("shape_id column not found in trips.txt")
+
             for line in lines[1:]:
                 parts = line.strip().split(',')
                 if len(parts) < len(header):
@@ -68,13 +76,19 @@ def get_trips_for_services(feed_dir: str, service_ids: list[str]) -> dict[str, l
                     if service_id not in trips:
                         trips[service_id] = []
 
+                    # Get shape_id if available
+                    shape_id = None
+                    if shape_id_index is not None and shape_id_index < len(parts):
+                        shape_id = parts[shape_id_index] if parts[shape_id_index] else None
+
                     trips[service_id].append(TripLine(
                         route_id=parts[route_id_index],
                         service_id=service_id,
                         trip_id=trip_id,
                         headsign=parts[headsign_index],
                         direction_id=int(
-                            parts[direction_id_index] if parts[direction_id_index] else -1)
+                            parts[direction_id_index] if parts[direction_id_index] else -1),
+                        shape_id=shape_id
                     ))
                     logger.debug(f"Found trip {trip_id} for service {service_id}")
     except FileNotFoundError:
