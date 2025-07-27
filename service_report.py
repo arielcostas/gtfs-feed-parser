@@ -1,28 +1,13 @@
+#!/usr/bin/env python3
 """
 Main script for generating service reports from GTFS data.
 """
-import os
-import shutil
 import sys
 import traceback
-import argparse
-from datetime import datetime, timedelta
-from typing import List, Dict, Any
 
-from src.download import download_feed_from_url
+from src.cli_parser import create_service_report_parser, CommonArgumentParser
+from src.orchestrators import generate_service_reports_orchestrator, prepare_feed_directory
 from src.logger import get_logger
-from src.common import get_all_feed_dates, date_range
-from src.stops import get_all_stops
-from src.services import get_active_services
-from src.trips import get_trips_for_services
-from src.report_writer import write_service_html
-from src.stop_times import get_stops_for_trips
-from src.routes import load_routes
-from src.report_data import get_service_report_data
-# Service extractor imports
-from src.service_extractor.default import DefaultServiceExtractor
-from src.service_extractor.lcg_muni import LcgMunicipalServiceExtractor
-from src.service_extractor.vgo_muni import VgoMunicipalServiceExtractor
 
 logger = get_logger("service_report")
 

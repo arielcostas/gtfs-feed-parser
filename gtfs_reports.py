@@ -3,150 +3,124 @@
 Unified GTFS Report Generator
 Generates service reports, stop reports, and GeoJSON files from GTFS data.
 """
-import os
 import sys
-import argparse
-import shutil
 import traceback
-from datetime import datetime as dt
 from typing import List, Optional
 
-from src.download import download_feed_from_url
+from src.cli_parser import create_unified_parser, validate_unified_args
+from src.orchestrators import (
+    generate_service_reports_orchestrator,
+    generate_stop_reports_orchestrator, 
+    generate_geojson_reports_orchestrator,
+    prepare_feed_directory,
+    get_date_list
+)
 from src.logger import get_logger
-from src.common import get_all_feed_dates, date_range
 
 logger = get_logger("gtfs_reports")
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Generate various reports from GTFS data.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Report Types:
-  --generate-services    Generate HTML service reports
-  --generate-stops       Generate JSON stop-based reports
-  --generate-geojson     Generate GeoJSON shape files
-
-Examples:
-  # Generate all reports for all dates
-  python gtfs_reports.py --feed-dir ./feed --all-dates --generate-services --generate-stops --generate-geojson
-
-  # Generate only service reports for a specific date range
-  python gtfs_reports.py --feed-url http://example.com/gtfs.zip --start-date 2025-07-24 --end-date 2025-07-30 --generate-services
-
-  # Generate shapes only from local feed
-  python gtfs_reports.py --feed-dir ./feed --generate-geojson
-        """)
-    
-    # Feed source arguments
-    source_group = parser.add_mutually_exclusive_group(required=True)
-    source_group.add_argument('--feed-dir', type=str,
-                             help="Path to the existing feed directory (unzipped)")
-    source_group.add_argument('--feed-url', type=str,
-                             help="URL to download the GTFS feed from")
-    
-    # Date selection arguments
-    date_group = parser.add_mutually_exclusive_group(required=True)
-    date_group.add_argument('--all-dates', action='store_true',
-                           help='Process all dates in the feed')
-    date_group.add_argument('--start-date', type=str,
-                           help='Start date (YYYY-MM-DD)')
-    
-    parser.add_argument('--end-date', type=str,
-                       help='End date (YYYY-MM-DD, inclusive). Required if --start-date is used.')
-    
-    # Report type arguments
-    parser.add_argument('--generate-services', action='store_true',
-                       help='Generate HTML service reports')
-    parser.add_argument('--generate-stops', action='store_true',
-                       help='Generate JSON stop-based reports')
-    parser.add_argument('--generate-geojson', action='store_true',
-                       help='Generate GeoJSON shape files')
-    
-    # Common output arguments
-    parser.add_argument('--output-dir', type=str, default="./output/",
-                       help='Directory to write reports to (default: ./output/)')
-    parser.add_argument('--pretty', action='store_true',
-                       help="Pretty-print JSON output")
-    parser.add_argument('--force-download', action='store_true',
-                       help="Force download even if the feed hasn't been modified")
-    
-    # Service-specific arguments
-    parser.add_argument('--service-extractor', type=str, default="default",
-                       help="Service extractor to use (default|lcg_muni|vgo_muni)")
-    
-    # Stop-specific arguments
-    parser.add_argument('--numeric-stop-code', action='store_true',
-                       help="Strip non-numeric characters from stop codes")
-    parser.add_argument('--jobs', type=int, default=0,
-                       help="Number of parallel processes to use (0 for auto-detection)")
-    
-    args = parser.parse_args()
-    
-    # Validation
-    if args.start_date and not args.end_date:
-        parser.error('--end-date is required when --start-date is specified')
-    
-    if args.feed_dir and not os.path.exists(args.feed_dir):
-        parser.error(f"Feed directory does not exist: {args.feed_dir}")
-    
-    if not any([args.generate_services, args.generate_stops, args.generate_geojson]):
-        parser.error("At least one report type must be specified (--generate-services, --generate-stops, or --generate-geojson)")
-    
-    return args
-
-
-def generate_service_reports(feed_dir: str, date_list: List[str], args):
-    """Generate HTML service reports using the existing service_report logic."""
-    logger.info("Generating service reports...")
-    
-    # Import here to avoid circular imports
-    from service_report import main as service_main
-    import service_report
-    
-    # Temporarily modify sys.argv to pass arguments to service_report
-    original_argv = sys.argv.copy()
-    
+def main():
+    """Main function for unified report generation."""
     try:
-        sys.argv = ['service_report.py']
-        sys.argv.extend(['--feed-dir', feed_dir])
-        sys.argv.extend(['--output-dir', args.output_dir])
+        # Parse arguments
+        parser = create_unified_parser()
+        args = parser.parse_args()
         
-        if args.all_dates:
-            sys.argv.append('--all-dates')
-        else:
-            sys.argv.extend(['--start-date', date_list[0]])
-            sys.argv.extend(['--end-date', date_list[-1]])
+        # Validate arguments
+        validate_unified_args(args)
         
-        if args.service_extractor != 'default':
-            sys.argv.extend(['--service-extractor', args.service_extractor])
+        # Prepare feed directory
+        feed_dir = prepare_feed_directory(
+            args.feed_dir, args.feed_url, args.output_dir, args.force_download
+        )
         
-        # Call the service report main function
-        service_main()
-        logger.info("Service reports generated successfully")
+        if feed_dir is None:
+            logger.info("Download was skipped (feed not modified). Exiting.")
+            return
         
-    finally:
-        sys.argv = original_argv
+        # Get date list for date-dependent reports
+        date_list = []
+        if args.generate_services or args.generate_stops:
+            date_list = get_date_list(
+                all_dates=args.all_dates,
+                start_date=getattr(args, 'start_date', None),
+                end_date=getattr(args, 'end_date', None),
+                feed_dir=feed_dir
+            )
+        
+        # Generate reports based on requested types
+        results = {}
+        
+        if args.generate_services:
+            logger.info("=== Generating Service Reports ===")
+            try:
+                results['services'] = generate_service_reports_orchestrator(
+                    feed_dir=feed_dir,
+                    output_dir=args.output_dir,
+                    all_dates_flag=args.all_dates,
+                    start_date=getattr(args, 'start_date', None),
+                    end_date=getattr(args, 'end_date', None),
+                    service_extractor=args.service_extractor
+                )
+                logger.info(f"Service reports completed: {len(results['services']['generated_dates'])} dates processed")
+            except Exception as e:
+                logger.error(f"Service report generation failed: {e}")
+                results['services'] = {'error': str(e)}
+        
+        if args.generate_stops:
+            logger.info("=== Generating Stop Reports ===")
+            try:
+                results['stops'] = generate_stop_reports_orchestrator(
+                    feed_dir=feed_dir,
+                    output_dir=args.output_dir,
+                    all_dates_flag=args.all_dates,
+                    start_date=getattr(args, 'start_date', None),
+                    end_date=getattr(args, 'end_date', None),
+                    numeric_stop_code=args.numeric_stop_code,
+                    jobs=args.jobs,
+                    pretty=args.pretty
+                )
+                logger.info(f"Stop reports completed: {len(results['stops']['generated_dates'])} dates processed")
+            except Exception as e:
+                logger.error(f"Stop report generation failed: {e}")
+                results['stops'] = {'error': str(e)}
+        
+        if args.generate_geojson:
+            logger.info("=== Generating GeoJSON Reports ===")
+            try:
+                results['geojson'] = generate_geojson_reports_orchestrator(
+                    feed_dir=feed_dir,
+                    output_dir=args.output_dir,
+                    pretty=args.pretty
+                )
+                logger.info(f"GeoJSON reports completed: {results['geojson']['shapes_count']} shapes processed")
+            except Exception as e:
+                logger.error(f"GeoJSON generation failed: {e}")
+                results['geojson'] = {'error': str(e)}
+        
+        # Summary
+        logger.info("=== Generation Summary ===")
+        for report_type, result in results.items():
+            if 'error' in result:
+                logger.error(f"{report_type.capitalize()}: FAILED - {result['error']}")
+            else:
+                logger.info(f"{report_type.capitalize()}: SUCCESS")
+        
+        # Exit with error if any generation failed
+        if any('error' in result for result in results.values()):
+            sys.exit(1)
+        
+        logger.info("All requested reports generated successfully!")
+        
+    except Exception as e:
+        logger.error(f"Report generation failed: {e}")
+        logger.debug(traceback.format_exc())
+        sys.exit(1)
 
 
-def generate_stop_reports(feed_dir: str, date_list: List[str], args):
-    """Generate JSON stop reports using the existing stop_report logic."""
-    logger.info("Generating stop reports...")
-    
-    # Import the functions we need from stop_report
-    from stop_report import process_date, write_index_json
-    from multiprocessing import Pool, cpu_count
-    
-    # Determine number of jobs for parallel processing
-    jobs = args.jobs
-    if jobs <= 0:
-        jobs = cpu_count()
-    
-    logger.info(f"Processing {len(date_list)} dates with {jobs} jobs")
-    
-    # Dictionary to store summary data for index files
-    all_stops_summary = {}
+if __name__ == "__main__":
+    main()
     
     if jobs > 1 and len(date_list) > 1:
         # Parallel processing
