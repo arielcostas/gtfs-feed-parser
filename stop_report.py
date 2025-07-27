@@ -189,6 +189,8 @@ def get_stop_arrivals(
 
     # Sort each stop's arrivals by arrival time
     for stop_code in stop_arrivals:
+        # Filter out entries with None arrival_seconds
+        stop_arrivals[stop_code] = [item for item in stop_arrivals[stop_code] if item["arrival_seconds"] is not None]
         stop_arrivals[stop_code].sort(key=lambda x: x["arrival_seconds"])
         # Remove the temporary sorting key
         for item in stop_arrivals[stop_code]:
