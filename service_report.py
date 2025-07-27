@@ -190,8 +190,6 @@ def main():
                 for trip in trip_list:
                     route_info = routes.get(trip.route_id)
                     if route_info:
-                        logger.debug(
-                            f"Setting route_short_name and route_color for trip {trip.trip_id}: {route_info}")
                         trip.route_short_name = route_info['route_short_name']
                         trip.route_color = route_info['route_color']
                     else:
@@ -243,8 +241,11 @@ def main():
                             }
                             stop_sequence.append(stop_info)
 
+                        trip_name = VgoMunicipalServiceExtractor.get_trip_name_from_trip_id(trip_id)
+
                         trip_detail_data = {
                             "trip_id": trip_id,
+                            "trip_name": trip_name,
                             "service_id": trip.service_id,  # always original GTFS service_id
                             "date": current_date,
                             "route_short_name": getattr(trip, "route_short_name", None),
@@ -266,7 +267,7 @@ def main():
 
                 # --- End new trip detail page generation ---
 
-                filename = f"{actual_service_id}_{current_date}.html"
+                filename = f"{actual_service_id}.html"
                 file_path = os.path.join(date_dir, filename)
                 # Add service_name to extra data for the report
                 extra_data = dict(service_data_with_timestamp)
@@ -355,7 +356,6 @@ def main():
     logger.info("Service report generation completed.")
 
     if feed_url:
-        logger.debug("Cleaning up temporary feed directory...")
         if os.path.exists(feed_dir):
             shutil.rmtree(feed_dir)
             logger.info(f"Removed temporary feed directory: {feed_dir}")

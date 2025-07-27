@@ -35,3 +35,16 @@ class DefaultServiceExtractor(AbstractServiceExtractor):
             str: The code of the service.
         """
         return service_identifier
+    
+    @staticmethod
+    def get_trip_name_from_trip_id(trip_id: str) -> str:
+        """
+        Returns the trip_id as-is for the default implementation.
+
+        Args:
+            trip_id (str): The trip identifier.
+
+        Returns:
+            str: The trip_id unchanged.
+        """
+        return trip_id

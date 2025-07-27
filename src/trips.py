@@ -90,7 +90,6 @@ def get_trips_for_services(feed_dir: str, service_ids: list[str]) -> dict[str, l
                             parts[direction_id_index] if parts[direction_id_index] else -1),
                         shape_id=shape_id
                     ))
-                    logger.debug(f"Found trip {trip_id} for service {service_id}")
     except FileNotFoundError:
         logger.warning("trips.txt file not found.")
 

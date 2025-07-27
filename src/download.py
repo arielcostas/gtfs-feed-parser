@@ -38,7 +38,6 @@ def _save_metadata(output_dir: str, etag: Optional[str], last_modified: Optional
     try:
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2)
-        logger.debug(f"Saved metadata to {metadata_path}")
     except IOError as e:
         logger.warning(f"Failed to save metadata to {metadata_path}: {e}")
 
@@ -49,7 +48,6 @@ def _check_if_modified(feed_url: str, output_dir: str) -> Tuple[bool, Optional[s
     """
     metadata = _load_metadata(output_dir)
     if not metadata:
-        logger.debug("No existing metadata found, proceeding with download")
         return True, None, None
     
     headers = {}
@@ -59,11 +57,8 @@ def _check_if_modified(feed_url: str, output_dir: str) -> Tuple[bool, Optional[s
         headers['If-Modified-Since'] = metadata['last_modified']
     
     if not headers:
-        logger.debug("No conditional headers available, proceeding with download")
         return True, None, None
-    
-    logger.debug(f"Checking if feed has been modified with headers: {headers}")
-    
+        
     try:
         response = requests.head(feed_url, headers=headers)
         
@@ -73,7 +68,6 @@ def _check_if_modified(feed_url: str, output_dir: str) -> Tuple[bool, Optional[s
         elif response.status_code == 200:
             etag = response.headers.get('ETag')
             last_modified = response.headers.get('Last-Modified')
-            logger.debug(f"Feed has been modified, new ETag: {etag}, Last-Modified: {last_modified}")
             return True, etag, last_modified
         else:
             logger.warning(f"Unexpected response status {response.status_code} when checking for modifications, proceeding with download")
@@ -104,7 +98,6 @@ def download_feed_from_url(feed_url: str, output_dir: str = None, force_download
     
     # Create a directory in the system temporary directory
     temp_dir = tempfile.mkdtemp(prefix='gtfs_vigo_')
-    logger.debug(f"Temporary directory created: {temp_dir}")
 
     # Create a temporary zip file in the temporary directory
     zip_filename = os.path.join(temp_dir, 'gtfs_vigo.zip')
@@ -117,8 +110,6 @@ def download_feed_from_url(feed_url: str, output_dir: str = None, force_download
 
     with open(zip_filename, 'wb') as file:
         file.write(response.content)
-
-    logger.debug(f"Downloaded GTFS data to {zip_filename}")
     
     # Extract and save metadata if output_dir is provided
     if output_dir:
@@ -131,11 +122,8 @@ def download_feed_from_url(feed_url: str, output_dir: str = None, force_download
     with zipfile.ZipFile(zip_filename, 'r') as zip_ref:
         zip_ref.extractall(temp_dir)
     
-    logger.debug(f"Extracted files to {temp_dir}")
-
     # Clean up the downloaded zip file
     os.remove(zip_filename)
-    logger.debug(f"Removed temporary file {zip_filename}")
 
     logger.info(f"GTFS feed downloaded from {feed_url} and extracted to {temp_dir}")
 

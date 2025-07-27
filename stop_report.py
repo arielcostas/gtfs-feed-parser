@@ -210,8 +210,6 @@ def write_stop_json(output_dir: str, date: str, stop_code: str, arrivals: List[D
         json.dump(arrivals, f, indent=2 if pretty else None, separators=(
             ",", ":") if not pretty else None, ensure_ascii=False)
 
-    logger.debug(f"Written {len(arrivals)} arrivals to {file_path}")
-
 
 def write_index_json(output_dir: str, stops_summary: Dict[str, Dict[str, int]], pretty: bool):
     """
@@ -338,7 +336,6 @@ def main():
     logger.info("Stop report generation completed.")
 
     if feed_url:
-        logger.debug("Cleaning up temporary feed directory...")
         if os.path.exists(feed_dir):
             shutil.rmtree(feed_dir)
             logger.info(f"Removed temporary feed directory: {feed_dir}")

@@ -21,8 +21,6 @@ def get_active_services(feed_dir: str, date: str) -> list[str]:
     weekday = datetime.datetime.strptime(date, '%Y-%m-%d').weekday()
     active_services: list[str] = []
 
-    logger.debug(f"Looking for active services {search_date=} {weekday=}")
-
     try:
         with open(os.path.join(feed_dir, 'calendar.txt'), 'r', encoding="utf-8") as calendar_file:
             lines = calendar_file.readlines()
@@ -41,7 +39,6 @@ def get_active_services(feed_dir: str, date: str) -> list[str]:
                 except ValueError as e:
                     logger.error(f"Required column not found in header: {e}")
                     return active_services
-                logger.debug(f"Header indices: {header}")
                 # Now read the rest of the file, find all services where the day of the week matches
                 weekday_columns = {
                     0: monday_index,
@@ -65,11 +62,6 @@ def get_active_services(feed_dir: str, date: str) -> list[str]:
 
                     if day_value == '1':
                         active_services.append(service_id)
-                        logger.debug(
-                            f"Found active service: {service_id} for weekday {weekday}")
-
-                logger.debug(
-                    "Processing calendar.txt file for active services. NOT IMPLEMENTED.")
     except FileNotFoundError:
         logger.warning("calendar.txt file not found.")
 
@@ -79,7 +71,6 @@ def get_active_services(feed_dir: str, date: str) -> list[str]:
             if len(lines) <= 1:
                 logger.warning(
                     "calendar_dates.txt file is empty or has only header line, not processing.")
-                logger.debug("Early-returning empty active services list.")
                 return active_services
 
             header = lines[0].strip().split(',')
@@ -90,8 +81,6 @@ def get_active_services(feed_dir: str, date: str) -> list[str]:
             except ValueError as e:
                 logger.error(f"Required column not found in header: {e}")
                 return active_services
-
-            logger.debug(f"Header indices: {header}")
 
             # Now read the rest of the file, find all services where 'date' matches the search_date
             # Start from 1 to skip header
@@ -108,14 +97,10 @@ def get_active_services(feed_dir: str, date: str) -> list[str]:
 
                 if date_value == search_date and exception_type == '1':
                     active_services.append(service_id)
-                    logger.debug(
-                        f"Found active service: {service_id} on date {date_value}")
 
                 if date_value == search_date and exception_type == '2':
                     if service_id in active_services:
                         active_services.remove(service_id)
-                        logger.debug(
-                            f"Removed service: {service_id} on date {date_value} due to exception type 2")
     except FileNotFoundError:
         logger.warning("calendar_dates.txt file not found.")
 

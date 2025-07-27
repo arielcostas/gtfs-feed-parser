@@ -287,7 +287,6 @@ def main():
     finally:
         # Cleanup temporary feed directory if downloaded
         if cleanup_feed_dir and os.path.exists(feed_dir):
-            logger.debug("Cleaning up temporary feed directory...")
             shutil.rmtree(feed_dir)
             logger.info(f"Removed temporary feed directory: {feed_dir}")
 

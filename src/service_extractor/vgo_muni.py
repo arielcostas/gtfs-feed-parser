@@ -4,6 +4,7 @@ from src.service_extractor.default import AbstractServiceExtractor
 # Compile regex patterns once for better performance
 _SERVICE_ID_PATTERN = re.compile(r".*_([0-9]{6})$")
 _SERVICE_NAME_PATTERN = re.compile(r"^.+_([0-9]{6})$")
+_TRIP_ID_PATTERN = re.compile(r"^.+_([0-9]{6})_([0-9]{1,})$")
 
 # Pre-define line name mapping for O(1) lookup
 _LINE_NAME_MAP = {
@@ -65,3 +66,28 @@ class VgoMunicipalServiceExtractor(AbstractServiceExtractor):
     def get_actual_line_name(line_number: int) -> str:
         # Use dictionary lookup for O(1) performance instead of match statement
         return _LINE_NAME_MAP.get(line_number, f"L{line_number}")
+    
+    @staticmethod
+    def get_trip_name_from_trip_id(trip_id: str) -> str:
+        """
+        Extracts a user-friendly trip name from the trip_id for Vigo GTFS.
+
+        Args:
+            trip_id (str): The trip identifier, e.g., "L3301LPV01_033001_2".
+
+        Returns:
+            str: A user-friendly trip name, e.g., "N4-1º viaje 2".
+        """
+        parts = _TRIP_ID_PATTERN.match(trip_id)
+        if not parts:
+            print(f"Invalid trip ID format: {trip_id} - Returning as is")
+            return trip_id
+        
+        service_id = parts.group(1)  # e.g., "033001"
+        trip_number = parts.group(2) # e.g., "2"
+
+        line_number = int(service_id[:3])  # First three digits are the line number
+        shift_code = int(service_id[3:])   # Last three digits are the shift
+
+        line_name = VgoMunicipalServiceExtractor.get_actual_line_name(line_number)
+        return f"{line_name}-{shift_code}º viaje {trip_number}"

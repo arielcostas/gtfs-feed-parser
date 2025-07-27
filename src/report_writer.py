@@ -29,8 +29,6 @@ def write_service_html(filename: str, feed_dir: str, service_id: str, trips: Lis
         # Write with buffered I/O for better performance
         with open(filename, "w", encoding="utf-8", buffering=8192) as f:
             f.write(html_output)
-        
-        logger.debug(f"Successfully wrote HTML report to {filename}")
     except Exception as e:
         logger.error(f"Error writing HTML report to {filename}: {e}")
         raise

@@ -212,7 +212,7 @@
                 </div>
             </div>
             <div style="text-align:right; margin:0.5em 1em 0.5em 0;">
-                <a href="../trips/{{ row.trip_id }}.html" target="_blank" style="color:#0074d9; text-decoration:underline; font-size:0.98em;">Ver detalle del viaje &rarr;</a>
+                <a href="../trips/{{ row.trip_id }}.html?service_ref={{ date }}%2F{{ service_id }}" style="color:#0074d9; text-decoration:underline; font-size:0.98em;">Ver detalle del viaje &rarr;</a>
             </div>
         </div>
     {% endfor %}

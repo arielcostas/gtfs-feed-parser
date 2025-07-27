@@ -70,8 +70,6 @@ def write_individual_shape_geojson(output_dir: str, shape_id: str, shape_geojson
         json.dump(shape_geojson, f, indent=2 if pretty else None, separators=(
             ",", ":") if not pretty else None, ensure_ascii=False)
 
-    logger.debug(f"Written shape {shape_id} to {file_path}")
-
 
 def write_shape_index(output_dir: str, shape_ids: List[str], pretty: bool):
     """Write an index of available shapes."""
@@ -152,7 +150,6 @@ def main():
     logger.info("Shape GeoJSON generation completed.")
 
     if feed_url:
-        logger.debug("Cleaning up temporary feed directory...")
         if os.path.exists(feed_dir):
             shutil.rmtree(feed_dir)
             logger.info(f"Removed temporary feed directory: {feed_dir}")

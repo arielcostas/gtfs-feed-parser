@@ -74,7 +74,6 @@ def load_shapes(feed_dir: str) -> Dict[str, List[ShapePoint]]:
         # Sort each shape's points by sequence
         for shape_id in shapes:
             shapes[shape_id].sort(key=lambda sp: sp.shape_pt_sequence)
-            logger.debug(f"Loaded {len(shapes[shape_id])} points for shape {shape_id}")
 
         logger.info(f"Loaded {len(shapes)} shapes from feed.")
         
