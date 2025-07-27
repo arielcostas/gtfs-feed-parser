@@ -2,7 +2,7 @@
 Coordinates report data preparation and rendering, and writes the HTML file.
 """
 from typing import List, Dict, Any
-from src.report_data import get_service_report_data
+from src.report_data import get_service_report_data_legacy
 from src.report_render import render_html_report
 from src.logger import get_logger
 from src.trips import TripLine
@@ -15,7 +15,7 @@ def write_service_html(filename: str, feed_dir: str, service_id: str, trips: Lis
     
     try:
         # Prepare data, passing pre-loaded stops for performance
-        data: dict[str, Any] = get_service_report_data(feed_dir, service_id, trips, date, stops_for_trips, stops)
+        data: dict[str, Any] = get_service_report_data_legacy(feed_dir, service_id, trips, date, stops_for_trips, stops)
         # Merge extra data if provided (e.g., service_name)
         if extra_data:
             data.update(extra_data)

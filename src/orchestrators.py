@@ -18,11 +18,12 @@ from .services import get_active_services
 from .trips import get_trips_for_services
 from .stop_times import get_stops_for_trips
 from .routes import load_routes
-from .report_data import get_service_report_data
+from .report_data import get_service_report_data_legacy
 from .report_render import render_html_report
 from .report_writer import write_service_html
 from .shapes import load_shapes, shapes_to_geojson
 from .street_name import get_street_name
+from .utils import create_stop_id_to_code_mapping, time_to_seconds
 
 # Service extractor imports
 from .service_extractor.default import DefaultServiceExtractor
@@ -138,16 +139,52 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
         trips = {service_id: trip_list for service_id, trip_list in all_trips.items()
                 if service_id in active_services}
         
-        # Generate service data for this date
-        service_data = get_service_report_data(
-            trips, all_stops_for_trips, stops, routes, service_extractor_class
-        )
+        # For now, use a simplified approach that generates HTML per service
+        # (This maintains compatibility with existing write_service_html function)
+        generated_services = []
         
-        # Write HTML report
-        write_service_html(output_dir, current_date, service_data, generated_at)
+        for service_id, trip_list in trips.items():
+            try:
+                # Extract service information
+                try:
+                    actual_service_id = service_extractor_class.extract_actual_service_id_from_identifier(service_id)
+                except Exception as e:
+                    logger.warning(f"Failed to extract actual service id for {service_id}: {e}")
+                    actual_service_id = service_id
+                
+                try:
+                    service_name = service_extractor_class.extract_service_name_from_identifier(service_id)
+                except Exception as e:
+                    logger.warning(f"Failed to extract service name for {service_id}: {e}")
+                    service_name = service_id
+                
+                # Add route information to trips
+                for trip in trip_list:
+                    route_info = routes.get(trip.route_id)
+                    if route_info:
+                        trip.route_short_name = route_info['route_short_name']
+                        trip.route_color = route_info['route_color']
+                    else:
+                        logger.warning(f"Route ID {trip.route_id} not found in routes data.")
+                
+                # Generate and write service HTML
+                write_service_html(output_dir, current_date, {
+                    "service_id": actual_service_id,
+                    "service_name": service_name,
+                    "trips": trip_list
+                }, generated_at)
+                
+                generated_services.append({
+                    "service_id": actual_service_id,
+                    "service_name": service_name,
+                    "number_of_trips": len(trip_list)
+                })
+                
+            except Exception as e:
+                logger.error(f"Error processing service {service_id}: {e}")
         
         all_generated_dates.append(current_date)
-        services_by_date[current_date] = service_data
+        services_by_date[current_date] = generated_services
     
     logger.info(f"Service report generation completed for {len(all_generated_dates)} dates")
     
@@ -163,17 +200,6 @@ def process_stop_date(args):
     """Process a single date for stop reports (used in multiprocessing)."""
     feed_dir, date, numeric_stop_code = args
     
-    def time_to_seconds(time_str: str) -> int:
-        """Convert HH:MM:SS to seconds since midnight."""
-        parts = time_str.split(':')
-        if len(parts) != 3:
-            return 0
-        try:
-            hours, minutes, seconds = map(int, parts)
-            return hours * 3600 + minutes * 60 + seconds
-        except ValueError:
-            return 0
-    
     logger.info(f"Processing stop data for date {date}")
     
     stops = get_all_stops(feed_dir)
@@ -188,15 +214,8 @@ def process_stop_date(args):
     stops_for_all_trips = get_stops_for_trips(feed_dir, all_trip_ids)
     routes = load_routes(feed_dir)
     
-    # Create stop_id to stop_code mapping
-    stop_id_to_code = {}
-    for stop_id, stop in stops.items():
-        if stop.stop_code:
-            stop_code = stop.stop_code
-            if numeric_stop_code:
-                numeric_code = ''.join(c for c in stop_code if c.isdigit())
-                stop_code = str(int(numeric_code)) if numeric_code else ""
-            stop_id_to_code[stop_id] = stop_code
+    # Create stop_id to stop_code mapping using utility function
+    stop_id_to_code = create_stop_id_to_code_mapping(stops, numeric_stop_code)
     
     # Organize data by stop_code
     stop_arrivals = {}
