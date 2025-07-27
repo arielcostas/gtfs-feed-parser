@@ -80,6 +80,12 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
     """
     Orchestrate the generation of service reports.
     
+    This function handles the complete workflow for generating service reports:
+    1. Loads static data (stops, routes) once for performance
+    2. Pre-loads all trips and stop times to avoid repeated queries  
+    3. Processes each date, filtering data and generating HTML reports
+    4. Returns comprehensive statistics about the generation process
+    
     Returns:
         Dictionary with generation statistics and data
     """
