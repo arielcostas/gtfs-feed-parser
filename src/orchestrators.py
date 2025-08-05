@@ -468,8 +468,8 @@ def process_stop_date(args):
                     'trip': {
                         'id': trip.trip_id,
                         'service_id': service_id,
-                        'headsign': getattr(trip, 'trip_headsign', '') or '',
-                        'direction_id': getattr(trip, 'direction_id', 'OUTBOUND')
+                        'headsign': getattr(trip, 'headsign', '') or '',
+                        'direction_id': getattr(trip, 'direction_id', 0)
                     },
                     'route_id': trip.route_id,
                     'departure_time': stop_time.departure_time,
