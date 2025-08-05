@@ -126,6 +126,9 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
     all_stops_for_trips = get_stops_for_trips(feed_dir, all_trip_ids)
     logger.info(f"Loaded stop times for {len(all_stops_for_trips)} trips.")
     
+    # Set generation timestamp once for all reports
+    generated_at = dt.now()
+    
     # Generate trip HTML files once for all unique trips (not per date)
     logger.info("Generating individual trip HTML files...")
     trips_dir = os.path.join(output_dir, "trips")
@@ -199,7 +202,6 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
     logger.info(f"Generated {generated_trip_count} unique trip HTML files.")
     
     # Process each date
-    generated_at = dt.now()
     all_generated_dates = []
     services_by_date = {}
     
@@ -445,34 +447,43 @@ def process_stop_date(args):
                 stop_lat = stop_info.stop_lat
                 stop_lon = stop_info.stop_lon
                 
-                # Extract street name
-                street_name = get_street_name(stop_name)
+                # Extract street name from current stop
+                stop_street_name = get_street_name(stop_name)
+                
+                # Get remaining stops in trip to generate next_streets
+                remaining_stops = trip_stops[i+1:]  # All stops after current one
+                next_streets = []
+                for remaining_stop in remaining_stops:
+                    remaining_stop_info = stops.get(remaining_stop.stop_id)
+                    if remaining_stop_info and remaining_stop_info.stop_name:
+                        street = get_street_name(remaining_stop_info.stop_name)
+                        if street not in next_streets and street != stop_street_name:
+                            next_streets.append(street)
                 
                 arrival_data = {
-                    'arrival_time': stop_time.arrival_time,
-                    'arrival_time_seconds': time_to_seconds(stop_time.arrival_time),
-                    'departure_time': stop_time.departure_time,
-                    'departure_time_seconds': time_to_seconds(stop_time.departure_time),
-                    'stop_sequence': stop_time.stop_sequence,
-                    'trip_id': trip.trip_id,
+                    'line': {
+                        'name': route_short_name,
+                        'colour': f"#{route_color}" if route_color and not route_color.startswith('#') else route_color or "#0074d9"
+                    },
+                    'trip': {
+                        'id': trip.trip_id,
+                        'service_id': service_id,
+                        'headsign': getattr(trip, 'trip_headsign', '') or '',
+                        'direction_id': getattr(trip, 'direction_id', 'OUTBOUND')
+                    },
                     'route_id': trip.route_id,
-                    'route_short_name': route_short_name,
-                    'route_color': route_color,
-                    'service_id': service_id,
-                    'trip_headsign': getattr(trip, 'trip_headsign', '') or '',
-                    'stop_name': stop_name,
-                    'stop_lat': stop_lat,
-                    'stop_lon': stop_lon,
-                    'street_name': street_name,
-                    'is_first_stop': i == 0,
-                    'is_last_stop': i == len(trip_stops) - 1
+                    'departure_time': stop_time.departure_time,
+                    'arrival_time': stop_time.arrival_time,
+                    'stop_sequence': stop_time.stop_sequence,
+                    'shape_dist_traveled': getattr(stop_time, 'shape_dist_traveled', 0),
+                    'next_streets': next_streets
                 }
                 
                 stop_arrivals[stop_code].append(arrival_data)
     
     # Sort arrivals by time for each stop
     for stop_code in stop_arrivals:
-        stop_arrivals[stop_code].sort(key=lambda x: x['arrival_time_seconds'])
+        stop_arrivals[stop_code].sort(key=lambda x: time_to_seconds(x['arrival_time']))
     
     return date, stop_arrivals
 
@@ -518,33 +529,41 @@ def generate_stop_reports_orchestrator(feed_dir: str, output_dir: str,
     # Write results and collect summary
     for date, stop_arrivals in results:
         if stop_arrivals:
-            # Write JSON file for this date
-            filename = f"stops_{date}.json"
-            filepath = os.path.join(output_dir, filename)
+            # Create the stops directory for this date
+            date_dir = os.path.join(output_dir, "stops", date)
+            os.makedirs(date_dir, exist_ok=True)
             
-            with open(filepath, 'w', encoding='utf-8') as f:
-                if pretty:
-                    json.dump(stop_arrivals, f, ensure_ascii=False, indent=2)
+            # Write individual JSON file for each stop
+            written_stops = 0
+            normalized_stop_codes = []
+            
+            for stop_code, arrivals in stop_arrivals.items():
+                # Normalize stop code for filename: remove non-numeric and leading zeros
+                normalized_code = ''.join(c for c in stop_code if c.isdigit())
+                if normalized_code:
+                    normalized_code = str(int(normalized_code))  # Remove leading zeros
                 else:
-                    json.dump(stop_arrivals, f, ensure_ascii=False, separators=(',', ':'))
+                    normalized_code = stop_code  # Fallback if no digits found
+                
+                stop_filepath = os.path.join(date_dir, f"{normalized_code}.json")
+                
+                with open(stop_filepath, 'w', encoding='utf-8') as f:
+                    if pretty:
+                        json.dump(arrivals, f, ensure_ascii=False, indent=2)
+                    else:
+                        json.dump(arrivals, f, ensure_ascii=False, separators=(',', ':'))
+                
+                written_stops += 1
+                normalized_stop_codes.append(normalized_code)
             
-            logger.info(f"Written stop report for {date}: {len(stop_arrivals)} stops")
-            
-            # Add to summary
-            all_stops_summary[date] = {
-                'total_stops': len(stop_arrivals),
-                'filename': filename
-            }
-    
-    # Write index files
-    write_index_json(output_dir, all_stops_summary, pretty)
+            logger.info(f"Written {written_stops} stop files for {date}")
     
     logger.info(f"Stop report generation completed for {len(results)} dates")
     
     return {
-        'generated_dates': list(all_stops_summary.keys()),
+        'generated_dates': [date for date, stop_arrivals in results if stop_arrivals],
         'total_dates': len(date_list),
-        'total_stops': sum(summary['total_stops'] for summary in all_stops_summary.values())
+        'total_stops': sum(len(stop_arrivals) for date, stop_arrivals in results)
     }
 
 
