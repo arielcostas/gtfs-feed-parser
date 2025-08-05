@@ -45,6 +45,46 @@ def time_to_seconds(time_str: str) -> int:
         return 0
 
 
+def normalize_gtfs_time(time_str: str) -> tuple[str, bool]:
+    """
+    Normalize GTFS time and determine if it's a next-day trip.
+    
+    Args:
+        time_str: Time string in HH:MM:SS format (may be >= 24:00:00)
+        
+    Returns:
+        Tuple of (normalized_time_str, is_next_day)
+        - normalized_time_str: Time adjusted to 00:00:00-23:59:59 range
+        - is_next_day: True if the original time was >= 24:00:00
+    """
+    if not time_str:
+        return time_str, False
+    
+    parts = time_str.split(':')
+    if len(parts) != 3:
+        return time_str, False
+    
+    try:
+        hours, minutes, seconds = map(int, parts)
+        if hours >= 24:
+            # Next day trip - subtract 24 hours
+            adjusted_hours = hours - 24
+            normalized_time = f"{adjusted_hours:02d}:{minutes:02d}:{seconds:02d}"
+            return normalized_time, True
+        else:
+            return time_str, False
+    except ValueError:
+        return time_str, False
+
+
+def seconds_to_time(seconds: int) -> str:
+    """Convert seconds since midnight to HH:MM:SS format."""
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
 def safe_color_hex(color: str) -> str:
     """Ensure color is a valid 6-character hex code."""
     if not color:

@@ -6,7 +6,7 @@ separated from CLI parsing and main script concerns.
 import os
 import json
 import multiprocessing
-from datetime import datetime as dt
+from datetime import datetime as dt, timedelta
 from typing import List, Dict, Any, Optional
 from multiprocessing import Pool, cpu_count
 
@@ -23,7 +23,7 @@ from .report_render import render_html_report
 from .report_writer import write_service_html, write_index_json, render_and_write_html
 from .shapes import load_shapes, shapes_to_geojson
 from .street_name import get_street_name
-from .utils import create_stop_id_to_code_mapping, time_to_seconds
+from .utils import create_stop_id_to_code_mapping, time_to_seconds, normalize_gtfs_time
 
 # Service extractor imports
 from .service_extractor.default import DefaultServiceExtractor
@@ -397,22 +397,39 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
 
 
 def process_stop_date(args):
-    """Process a single date for stop reports (used in multiprocessing)."""
+    """Process a single date for stop reports, including next-day trips from previous date."""
     feed_dir, date, numeric_stop_code = args
     
     logger.info(f"Processing stop data for date {date}")
     
     stops = get_all_stops(feed_dir)
+    routes = load_routes(feed_dir)
+    
+    # Get active services for current date
     active_services = get_active_services(feed_dir, date)
     
-    if not active_services:
+    # Get active services for previous date (for next-day trips)
+    try:
+        date_obj = dt.strptime(date, '%Y-%m-%d')
+        prev_date_obj = date_obj - timedelta(days=1)
+        prev_date = prev_date_obj.strftime('%Y-%m-%d')
+        prev_active_services = get_active_services(feed_dir, prev_date)
+    except (ValueError, TypeError):
+        logger.warning(f"Could not parse date {date} for previous date calculation")
+        prev_active_services = []
+    
+    # Combine services (current day + previous day for next-day trips)
+    all_services = list(set(active_services + prev_active_services))
+    
+    if not all_services:
         logger.info(f"No active services found for date {date}")
         return date, {}
     
-    trips = get_trips_for_services(feed_dir, active_services)
+    logger.info(f"Date {date}: {len(active_services)} current services, {len(prev_active_services)} prev services, {len(all_services)} total")
+    
+    trips = get_trips_for_services(feed_dir, all_services)
     all_trip_ids = [trip.trip_id for trip_list in trips.values() for trip in trip_list]
     stops_for_all_trips = get_stops_for_trips(feed_dir, all_trip_ids)
-    routes = load_routes(feed_dir)
     
     # Create stop_id to stop_code mapping using utility function
     stop_id_to_code = create_stop_id_to_code_mapping(stops, numeric_stop_code)
@@ -421,6 +438,10 @@ def process_stop_date(args):
     stop_arrivals = {}
     
     for service_id, trip_list in trips.items():
+        # Determine if this service is for current date or next-day from previous date
+        is_current_date_service = service_id in active_services
+        is_prev_date_service = service_id in prev_active_services
+        
         for trip in trip_list:
             route_info = routes.get(trip.route_id, {})
             route_short_name = route_info.get('route_short_name', '')
@@ -429,6 +450,23 @@ def process_stop_date(args):
             trip_stops = stops_for_all_trips.get(trip.trip_id, [])
             
             for i, stop_time in enumerate(trip_stops):
+                # Normalize arrival and departure times
+                arrival_time, arrival_is_next_day = normalize_gtfs_time(stop_time.arrival_time)
+                departure_time, departure_is_next_day = normalize_gtfs_time(stop_time.departure_time)
+                
+                # Determine which date this stop belongs to
+                belongs_to_current_date = False
+                
+                if is_current_date_service and not arrival_is_next_day:
+                    # Current date service with same-day time
+                    belongs_to_current_date = True
+                elif is_prev_date_service and arrival_is_next_day:
+                    # Previous date service with next-day time (crosses midnight)
+                    belongs_to_current_date = True
+                
+                if not belongs_to_current_date:
+                    continue
+                
                 stop_id = stop_time.stop_id
                 stop_code = stop_id_to_code.get(stop_id)
                 
@@ -472,8 +510,8 @@ def process_stop_date(args):
                         'direction_id': getattr(trip, 'direction_id', 0)
                     },
                     'route_id': trip.route_id,
-                    'departure_time': stop_time.departure_time,
-                    'arrival_time': stop_time.arrival_time,
+                    'departure_time': departure_time,  # Use normalized time
+                    'arrival_time': arrival_time,      # Use normalized time
                     'stop_sequence': stop_time.stop_sequence,
                     'shape_dist_traveled': getattr(stop_time, 'shape_dist_traveled', 0),
                     'next_streets': next_streets
