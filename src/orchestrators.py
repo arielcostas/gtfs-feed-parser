@@ -20,7 +20,7 @@ from .stop_times import get_stops_for_trips
 from .routes import load_routes
 from .report_data import get_service_report_data_legacy
 from .report_render import render_html_report
-from .report_writer import write_service_html, write_index_json
+from .report_writer import write_service_html, write_index_json, render_and_write_html
 from .shapes import load_shapes, shapes_to_geojson
 from .street_name import get_street_name
 from .utils import create_stop_id_to_code_mapping, time_to_seconds
@@ -126,6 +126,78 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
     all_stops_for_trips = get_stops_for_trips(feed_dir, all_trip_ids)
     logger.info(f"Loaded stop times for {len(all_stops_for_trips)} trips.")
     
+    # Generate trip HTML files once for all unique trips (not per date)
+    logger.info("Generating individual trip HTML files...")
+    trips_dir = os.path.join(output_dir, "trips")
+    os.makedirs(trips_dir, exist_ok=True)
+    
+    generated_trip_count = 0
+    for service_id, trip_list in all_trips.items():
+        for trip in trip_list:
+            try:
+                trip_id = trip.trip_id
+                trip_detail_filename = f"trips/{trip_id}.html"
+                trip_detail_path = os.path.join(output_dir, trip_detail_filename)
+                
+                # Skip if trip file already exists (avoid duplicates)
+                if os.path.exists(trip_detail_path):
+                    continue
+                
+                # Gather stop sequence and times for this trip
+                stops_for_trip = all_stops_for_trips.get(trip_id, [])
+                stop_sequence = []
+                
+                for stop in stops_for_trip:
+                    stop_id = stop.stop_id
+                    arrival_time = stop.arrival_time
+                    departure_time = stop.departure_time
+                    
+                    stop_obj = stops.get(stop_id)
+                    if stop_obj:
+                        stop_info = {
+                            "stop_id": stop_id,
+                            "stop_name": stop_obj.stop_name,
+                            "arrival_time": arrival_time,
+                            "departure_time": departure_time,
+                            "stop_lat": stop_obj.stop_lat,
+                            "stop_lon": stop_obj.stop_lon
+                        }
+                        stop_sequence.append(stop_info)
+                
+                # Get route info for this trip
+                route_info = routes.get(trip.route_id, {})
+                route_short_name = route_info.get('route_short_name', None)
+                route_color = route_info.get('route_color', None)
+                
+                # Get trip name using the service extractor
+                trip_name = service_extractor_class.get_trip_name_from_trip_id(trip_id)
+                
+                trip_detail_data = {
+                    "trip_id": trip_id,
+                    "trip_name": trip_name,
+                    "service_id": trip.service_id,
+                    "date": "various",  # Since trip spans multiple dates
+                    "route_short_name": route_short_name,
+                    "route_color": route_color,
+                    "shape_id": getattr(trip, "shape_id", None),
+                    "stop_sequence": stop_sequence,
+                    "generated_at": generated_at
+                }
+                
+                # Render trip detail page
+                render_and_write_html(
+                    "trip_detail.html.j2",
+                    trip_detail_data,
+                    trip_detail_path
+                )
+                
+                generated_trip_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error generating trip detail page for trip {trip_id}: {e}")
+    
+    logger.info(f"Generated {generated_trip_count} unique trip HTML files.")
+    
     # Process each date
     generated_at = dt.now()
     all_generated_dates = []
@@ -193,19 +265,126 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
                 write_service_html(file_path, feed_dir, actual_service_id, trip_list, current_date, 
                                  stops_for_service_trips, extra_data, stops)
                 
+                # Collect route information with consecutive trip counts in sequence
+                service_routes = []
+                if trip_list:
+                    # Group consecutive trips with the same route
+                    current_route = None
+                    current_count = 0
+                    
+                    for trip in trip_list:
+                        route_info = routes.get(trip.route_id, {})
+                        route_short_name = route_info.get('route_short_name', trip.route_id)
+                        route_color = route_info.get('route_color', '0074d9')
+                        
+                        if current_route is None or current_route['short_name'] != route_short_name:
+                            # New route or different route, save previous if exists
+                            if current_route is not None:
+                                service_routes.append(current_route)
+                            
+                            # Start new route group
+                            current_route = {
+                                "short_name": route_short_name,
+                                "color": route_color,
+                                "count": 1
+                            }
+                        else:
+                            # Same route as previous, increment count
+                            current_count += 1
+                            current_route["count"] += 1
+                    
+                    # Don't forget to add the last route
+                    if current_route is not None:
+                        service_routes.append(current_route)
+                
+                # Calculate first departure and last arrival times
+                first_departure = None
+                last_arrival = None
+                if trip_list:
+                    # Get all stop times for this service's trips
+                    all_times = []
+                    for trip in trip_list:
+                        trip_stops = stops_for_service_trips.get(trip.trip_id, [])
+                        if trip_stops:
+                            all_times.extend([stop.departure_time for stop in trip_stops if stop.departure_time])
+                            all_times.extend([stop.arrival_time for stop in trip_stops if stop.arrival_time])
+                    
+                    if all_times:
+                        all_times.sort()
+                        first_departure = all_times[0]
+                        last_arrival = all_times[-1]
+                
                 generated_services.append({
                     "service_id": actual_service_id,
                     "service_name": service_name,
-                    "number_of_trips": len(trip_list)
+                    "number_of_trips": len(trip_list),
+                    "filename": filename,
+                    "lines": service_routes,
+                    "first_departure": first_departure,
+                    "last_arrival": last_arrival
                 })
                 
             except Exception as e:
                 logger.error(f"Error processing service {service_id}: {e}")
         
+        # Generate day index for this date
+        try:
+            # Compute unique lines for filter buttons
+            unique_day_lines = []
+            seen_lines = set()
+            for service_data in generated_services:
+                for line in service_data.get("lines", []):
+                    name = line.get("short_name")
+                    color = line.get("color")
+                    if name and name not in seen_lines:
+                        seen_lines.add(name)
+                        unique_day_lines.append({"name": name, "color": color})
+            
+            # Sort lines by order in routes.txt
+            import csv
+            try:
+                routes_path = os.path.join(feed_dir, 'routes.txt')
+                with open(routes_path, encoding='utf-8') as rf:
+                    reader = csv.DictReader(rf)
+                    order = [row.get('route_short_name', '') for row in reader]
+            except Exception:
+                order = [ln['name'] for ln in unique_day_lines]
+            unique_day_lines.sort(key=lambda ln: order.index(ln['name']) if ln['name'] in order else len(order))
+            
+            # Write per-date index
+            render_and_write_html(
+                "day_index.html.j2",
+                {
+                    "date": current_date, 
+                    "services": generated_services, 
+                    "day_lines": unique_day_lines, 
+                    "generated_at": generated_at
+                },
+                os.path.join(date_dir, "index.html")
+            )
+            logger.info(f"Generated day index for {current_date}")
+        except Exception as e:
+            logger.error(f"Error generating day index for {current_date}: {e}")
+        
         all_generated_dates.append(current_date)
         services_by_date[current_date] = generated_services
     
     logger.info(f"Service report generation completed for {len(all_generated_dates)} dates")
+    
+    # Generate feed-level index if we have generated dates
+    if all_generated_dates:
+        try:
+            render_and_write_html(
+                "feed_index.html.j2",
+                {
+                    "dates": all_generated_dates, 
+                    "generated_at": generated_at.strftime('%Y-%m-%d %H:%M:%S %Z')
+                },
+                os.path.join(output_dir, "index.html")
+            )
+            logger.info("Generated feed-level index")
+        except Exception as e:
+            logger.error(f"Error generating feed-level index: {e}")
     
     return {
         'generated_dates': all_generated_dates,
@@ -280,7 +459,7 @@ def process_stop_date(args):
                     'route_short_name': route_short_name,
                     'route_color': route_color,
                     'service_id': service_id,
-                    'trip_headsign': trip.trip_headsign or '',
+                    'trip_headsign': getattr(trip, 'trip_headsign', '') or '',
                     'stop_name': stop_name,
                     'stop_lat': stop_lat,
                     'stop_lon': stop_lon,

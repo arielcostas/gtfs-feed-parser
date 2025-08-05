@@ -8,6 +8,7 @@ import traceback
 from src.cli_parser import create_service_report_parser, CommonArgumentParser
 from src.orchestrators import generate_service_reports_orchestrator, prepare_feed_directory
 from src.logger import get_logger
+from src.report_data import get_service_report_data
 from src.report_writer import write_service_html, render_and_write_html
 
 logger = get_logger("service_report")
