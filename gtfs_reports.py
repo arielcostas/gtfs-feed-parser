@@ -61,7 +61,8 @@ def main():
                     all_dates_flag=args.all_dates,
                     start_date=getattr(args, 'start_date', None),
                     end_date=getattr(args, 'end_date', None),
-                    service_extractor=args.service_extractor
+                    service_extractor=args.service_extractor,
+                    rolling_dates_config_path=getattr(args, 'rolling_dates_config', None)
                 )
                 logger.info(f"Service reports completed: {len(results['services']['generated_dates'])} dates processed")
             except Exception as e:
@@ -79,7 +80,8 @@ def main():
                     end_date=getattr(args, 'end_date', None),
                     numeric_stop_code=args.numeric_stop_code,
                     jobs=args.jobs,
-                    pretty=args.pretty
+                    pretty=args.pretty,
+                    rolling_dates_config_path=getattr(args, 'rolling_dates_config', None)
                 )
                 logger.info(f"Stop reports completed: {len(results['stops']['generated_dates'])} dates processed")
             except Exception as e:

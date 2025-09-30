@@ -9,24 +9,99 @@
 
     <title>Índice de Reporte de Servicios para {{ date }}</title>
     <style>
-        body { font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 2rem; background-color: #fff; max-width: 800px; margin: 0 auto; }
-        h1 { font-size: 1.75rem; margin-bottom: 1.5rem; }
-        a { color: #0074d9; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-        ul.service-cards { list-style: none; padding: 0; margin: 0; }
-        ul.service-cards li { background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; margin: 0.5rem 0; padding: 1rem; }
-        .service-card-title { font-weight: 600; font-size: 1.1rem; margin-bottom: 0.5rem; }
-        .service-card-info { font-size: 0.9rem; margin-bottom: 0.75rem; color: #555; }
-        .service-card-lines { margin-top: 0.5rem; }
-        .service-card-lines span { display: inline-block; color: #fff; padding: 0.3rem 0.6rem; border-radius: 0.25rem; margin: 0.25rem 0.1rem; font-size: 0.85rem; font-weight: 600; }
+        body { 
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            padding: 2rem; 
+            background-color: #fff; 
+            max-width: 800px; 
+            margin: 0 auto; 
+        }
+        h1 { 
+            font-size: 1.75rem; 
+            margin-bottom: 1.5rem; 
+        }
+        a { 
+            color: #0074d9; 
+            text-decoration: none; 
+        }
+        a:hover { 
+            text-decoration: underline; 
+        }
+        ul.service-cards { 
+            list-style: none; 
+            padding: 0; 
+            margin: 0; 
+        }
+        ul.service-cards li { 
+            background: #f9f9f9; 
+            border: 1px solid #ddd; 
+            border-radius: 4px; 
+            margin: 0.5rem 0; 
+            padding: 1rem; 
+        }
+        .service-card-title { 
+            font-weight: 600; 
+            font-size: 1.1rem; 
+            margin-bottom: 0.5rem; 
+        }
+        .service-card-info { 
+            font-size: 0.9rem; 
+            margin-bottom: 0.75rem; 
+            color: #555; 
+        }
+        .service-card-lines { 
+            margin-top: 0.5rem; 
+        }
+        .service-card-lines span { 
+            display: inline-block; 
+            color: #fff; 
+            padding: 0.3rem 0.6rem; 
+            border-radius: 0.25rem; 
+            margin: 0.25rem 0.1rem; 
+            font-size: 0.85rem; 
+            font-weight: 600; 
+        }
         /* Filter button styles */
-        .filter-btn { padding: 0.4rem 0.8rem; margin: 0.2rem; border: 1px solid #0074d9; border-radius: 4px; background: #fff; color: #0074d9; cursor: pointer; transition: background 0.2s, color 0.2s; }
-        .filter-btn.active { background: #0074d9; color: #fff; }
-        .footer { text-align: center; font-size: 0.85rem; color: #666; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; }
+        .filter-btn { 
+            padding: 0.4rem 0.8rem; 
+            margin: 0.2rem; 
+            border: 1px solid #0074d9; 
+            border-radius: 4px; 
+            background: #fff; 
+            color: #0074d9; 
+            cursor: pointer; 
+            transition: background 0.2s, color 0.2s; 
+        }
+        .filter-btn.active { 
+            background: #0074d9; 
+            color: #fff; 
+        }
+        .footer { 
+            text-align: center; 
+            font-size: 0.85rem; 
+            color: #666; 
+            margin-top: 2rem; 
+            padding-top: 1rem; 
+            border-top: 1px solid #ddd; 
+        }
+        .rolling-date-notice {
+            background-color: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 4px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            color: #856404;
+        }
     </style>
 </head>
 <body>
     <h1>Servicios disponibles para {{ date }}</h1>
+    {% if is_rolling_date and source_date %}
+    <div class="rolling-date-notice">
+        <strong>ℹ️ Aviso:</strong> Los datos mostrados para <strong>{{ date }}</strong> provienen de <strong>{{ source_date }}</strong>, 
+        ya que la fecha solicitada no está disponible en el feed GTFS.
+    </div>
+    {% endif %}
     {# Line filter buttons #}
     <div id="line-filters" style="margin-bottom:1rem; text-align:center;">
         {# 'Todos' default button #}

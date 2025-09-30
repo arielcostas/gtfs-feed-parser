@@ -42,6 +42,8 @@ class CommonArgumentParser:
                            help="Force download even if the feed hasn't been modified")
         parser.add_argument('--pretty', action='store_true',
                            help="Pretty-print JSON output")
+        parser.add_argument('--rolling-dates-config', type=str,
+                           help="Path to rolling dates configuration file (JSON)")
 
     @staticmethod
     def validate_common_args(args):

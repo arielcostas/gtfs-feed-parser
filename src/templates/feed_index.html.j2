@@ -10,24 +10,145 @@
     <title>Índice de Fechas de Informes de Servicio</title>
 
     <style>
-        body { font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 2rem; background-color: #fff; max-width: 600px; margin: 0 auto; }
-        h1 { font-size: 1.75rem; margin-bottom: 1.5rem; text-align: center; }
-        ul.date-list { list-style: none; padding: 0; margin: 0; }
-        ul.date-list li { background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 0.75rem 1rem; margin: 0.5rem 0; text-align: center; }
-        ul.date-list li.current-day { background: #e3f2fd; border-color: #0074d9; }
-        ul.date-list li.current-day a { font-weight: 700; }
-        ul.date-list li a { font-size: 1rem; font-weight: 500; color: #0074d9; text-decoration: none; }
-        ul.date-list li a:hover { text-decoration: underline; }
-        .footer { text-align: center; font-size: 0.85rem; color: #666; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; }
+        body { 
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            padding: 2rem; 
+            background-color: #fff; 
+            max-width: 600px; 
+            margin: 0 auto; 
+        }
+        h1 { 
+            font-size: 1.75rem; 
+            margin-bottom: 1.5rem; 
+            text-align: center; 
+        }
+        ul.date-list { 
+            list-style: none; 
+            padding: 0; 
+            margin: 0; 
+        }
+        ul.date-list li { 
+            background: #f9f9f9; 
+            border: 1px solid #ddd; 
+            border-radius: 4px; 
+            padding: 0.75rem 1rem; 
+            margin: 0.5rem 0; 
+            text-align: center; 
+        }
+        ul.date-list li.current-day { 
+            background: #e3f2fd; 
+            border-color: #0074d9; 
+        }
+        ul.date-list li.current-day a { 
+            font-weight: 700; 
+        }
+        ul.date-list li.rolling-date { 
+            background: #fff8e1; 
+            border-color: #ffc107; 
+        }
+        ul.date-list li.rolling-date a { 
+            color: #f57c00; 
+        }
+        ul.date-list li.rolling-date .rolling-indicator {
+            display: inline-block;
+            margin-left: 0.5rem;
+            font-size: 0.75rem;
+            color: #856404;
+            background: #fff3cd;
+            padding: 0.15rem 0.5rem;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+        ul.date-list li a { 
+            font-size: 1rem; 
+            font-weight: 500; 
+            color: #0074d9; 
+            text-decoration: none; 
+        }
+        ul.date-list li a:hover { 
+            text-decoration: underline; 
+        }
+        .footer { 
+            text-align: center; 
+            font-size: 0.85rem; 
+            color: #666; 
+            margin-top: 2rem; 
+            padding-top: 1rem; 
+            border-top: 1px solid #ddd; 
+        }
+        .legend {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: #f5f5f5;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        .legend-title {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 0.3rem 0;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            margin-right: 0.5rem;
+            border: 1px solid #ddd;
+        }
+        .legend-color.current {
+            background: #e3f2fd;
+            border-color: #0074d9;
+        }
+        .legend-color.rolling {
+            background: #fff8e1;
+            border-color: #ffc107;
+        }
+        .legend-color.normal {
+            background: #f9f9f9;
+            border-color: #ddd;
+        }
     </style>
 </head>
 <body>
     <h1>Fechas disponibles de informes de servicio</h1>
     <ul class="date-list">
-        {% for date in dates %}
-            <li data-date="{{ date }}"><a href="{{ date }}/index.html">{{ date }}</a></li>
-        {% endfor %}
+        {% if date_info_list %}
+            {% for info in date_info_list %}
+                <li data-date="{{ info.date }}" {% if info.is_rolling %}class="rolling-date" data-source-date="{{ info.source_date }}"{% endif %}>
+                    <a href="{{ info.date }}/index.html">{{ info.date }}</a>
+                    {% if info.is_rolling %}
+                        <span class="rolling-indicator" title="Datos desde {{ info.source_date }}">🔄 Prorrogado</span>
+                    {% endif %}
+                </li>
+            {% endfor %}
+        {% else %}
+            {% for date in dates %}
+                <li data-date="{{ date }}">
+                    <a href="{{ date }}/index.html">{{ date }}</a>
+                </li>
+            {% endfor %}
+        {% endif %}
     </ul>
+
+    <div class="legend">
+        <div class="legend-title">Leyenda:</div>
+        <div class="legend-item">
+            <div class="legend-color current"></div>
+            <span>Día actual</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color rolling"></div>
+            <span>Información prorrogada (datos de otra fecha)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color normal"></div>
+            <span>Fecha normal</span>
+        </div>
+    </div>
 
     <div class="footer">
         Generado el {{ generated_at }}
@@ -62,6 +183,12 @@
                         // Keep original date format if parsing fails
                         link.textContent = dateStr;
                     }
+                }
+                
+                // Add tooltip for rolling dates
+                const sourceDate = li.getAttribute('data-source-date');
+                if (sourceDate) {
+                    li.title = 'Datos desde ' + sourceDate;
                 }
             });
         });

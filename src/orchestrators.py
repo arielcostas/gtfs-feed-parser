@@ -24,6 +24,7 @@ from .report_writer import write_service_html, write_index_json, render_and_writ
 from .shapes import load_shapes, shapes_to_geojson
 from .street_name import get_street_name
 from .utils import create_stop_id_to_code_mapping, time_to_seconds, normalize_gtfs_time
+from .rolling_dates import create_rolling_date_config, RollingDateConfig
 
 # Service extractor imports
 from .service_extractor.default import DefaultServiceExtractor
@@ -76,7 +77,8 @@ def get_date_list(all_dates: bool, start_date: Optional[str],
 
 def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
                                         all_dates_flag: bool, start_date: Optional[str],
-                                        end_date: Optional[str], service_extractor: str) -> Dict[str, Any]:
+                                        end_date: Optional[str], service_extractor: str,
+                                        rolling_dates_config_path: Optional[str] = None) -> Dict[str, Any]:
     """
     Orchestrate the generation of service reports.
     
@@ -86,16 +88,34 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
     3. Processes each date, filtering data and generating HTML reports
     4. Returns comprehensive statistics about the generation process
     
+    Args:
+        rolling_dates_config_path: Optional path to rolling dates JSON configuration file
+    
     Returns:
         Dictionary with generation statistics and data
     """
     logger.info("Starting service report generation...")
+    
+    # Initialize rolling dates configuration
+    rolling_config = create_rolling_date_config(rolling_dates_config_path)
+    if rolling_config.has_mappings():
+        logger.info(f"Loaded rolling dates configuration with {len(rolling_config.get_all_mappings())} mappings")
     
     # Get service extractor class
     service_extractor_class = get_service_extractor_class(service_extractor)
     
     # Get date list
     date_list = get_date_list(all_dates_flag, start_date, end_date, feed_dir)
+    
+    # Add all rolling dates from config to date_list
+    if rolling_config.has_mappings():
+        original_count = len(date_list)
+        rolling_dates = list(rolling_config.get_all_mappings().keys())
+        # Convert to set to avoid duplicates, then back to sorted list
+        date_list = sorted(set(date_list + rolling_dates))
+        added_count = len(date_list) - original_count
+        if added_count > 0:
+            logger.info(f"Added {added_count} rolling dates to processing list")
     
     if not date_list:
         raise ValueError("No valid dates to process.")
@@ -111,10 +131,26 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
     logger.info(f"Loaded {len(routes)} routes from feed.")
     
     # Pre-load all trips for performance
+    # Include both actual dates AND source dates for rolling dates
     logger.info("Loading all trips data...")
     all_services = []
+    dates_to_query = set()
+    
     for date in date_list:
-        date_services = get_active_services(feed_dir, date)
+        # Check if this date has a rolling mapping
+        source_date = rolling_config.get_source_date(date)
+        if source_date:
+            # This is a rolling date, we need services from the source date
+            dates_to_query.add(source_date)
+            logger.debug(f"Date {date} is rolling, will query services from {source_date}")
+        else:
+            # Normal date, query its own services
+            dates_to_query.add(date)
+    
+    logger.info(f"Querying services for {len(dates_to_query)} unique dates (including source dates for rolling dates)")
+    
+    for query_date in dates_to_query:
+        date_services = get_active_services(feed_dir, query_date)
         all_services.extend(date_services)
     
     unique_services = list(dict.fromkeys(all_services))
@@ -208,12 +244,22 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
     for current_date in date_list:
         logger.info(f"Processing service report for date {current_date}")
         
-        active_services = get_active_services(feed_dir, current_date)
+        # Check if this is a rolling date
+        source_date = None
+        is_rolling = rolling_config.is_rolling_date(current_date)
+        if is_rolling:
+            source_date = rolling_config.get_source_date(current_date)
+            logger.info(f"Date {current_date} is a rolling date, using data from {source_date}")
+            date_for_query = source_date
+        else:
+            date_for_query = current_date
+        
+        active_services = get_active_services(feed_dir, date_for_query)
         if not active_services:
             logger.info("No active services found for the given date.")
             continue
         
-        logger.info(f"Found {len(active_services)} active services for date {current_date}.")
+        logger.info(f"Found {len(active_services)} active services for date {date_for_query}.")
         
         # Filter pre-loaded trips by active services for this date
         trips = {service_id: trip_list for service_id, trip_list in all_trips.items()
@@ -257,7 +303,9 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
                 # Prepare extra data
                 extra_data = {
                     "service_name": service_name,
-                    "generated_at": generated_at
+                    "generated_at": generated_at,
+                    "is_rolling_date": is_rolling,
+                    "source_date": source_date if is_rolling else None
                 }
                 
                 # Filter stops for trips for this service
@@ -360,7 +408,9 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
                     "date": current_date, 
                     "services": generated_services, 
                     "day_lines": unique_day_lines, 
-                    "generated_at": generated_at
+                    "generated_at": generated_at,
+                    "is_rolling_date": is_rolling,
+                    "source_date": source_date if is_rolling else None
                 },
                 os.path.join(date_dir, "index.html")
             )
@@ -376,10 +426,21 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
     # Generate feed-level index if we have generated dates
     if all_generated_dates:
         try:
+            # Build list of dates with rolling status
+            date_info_list = []
+            for date in all_generated_dates:
+                date_info = {
+                    "date": date,
+                    "is_rolling": rolling_config.is_rolling_date(date),
+                    "source_date": rolling_config.get_source_date(date)
+                }
+                date_info_list.append(date_info)
+            
             render_and_write_html(
                 "feed_index.html.j2",
                 {
-                    "dates": all_generated_dates, 
+                    "dates": all_generated_dates,
+                    "date_info_list": date_info_list,
                     "generated_at": generated_at.strftime('%Y-%m-%d %H:%M:%S %Z')
                 },
                 os.path.join(output_dir, "index.html")
@@ -397,35 +458,48 @@ def generate_service_reports_orchestrator(feed_dir: str, output_dir: str,
 
 
 def process_stop_date(args):
-    """Process a single date for stop reports, including next-day trips from previous date."""
-    feed_dir, date, numeric_stop_code = args
+    """
+    Process a single date for stop reports, including next-day trips from previous date.
     
-    logger.info(f"Processing stop data for date {date}")
+    Note: When using rolling dates, multiple target dates may share the same source date.
+    Due to multiprocessing, each call loads data independently. For sequential processing
+    (jobs=1), consider implementing caching if processing many rolling dates with the same source.
+    """
+    feed_dir, target_date, numeric_stop_code, source_date = args
+    
+    # Determine which date to query for services
+    date_for_query = source_date if source_date else target_date
+    is_rolling = source_date is not None
+    
+    if is_rolling:
+        logger.info(f"Processing stop data for date {target_date} (rolling from {source_date})")
+    else:
+        logger.info(f"Processing stop data for date {target_date}")
     
     stops = get_all_stops(feed_dir)
     routes = load_routes(feed_dir)
     
-    # Get active services for current date
-    active_services = get_active_services(feed_dir, date)
+    # Get active services for current date (or source date if rolling)
+    active_services = get_active_services(feed_dir, date_for_query)
     
     # Get active services for previous date (for next-day trips)
     try:
-        date_obj = dt.strptime(date, '%Y-%m-%d')
+        date_obj = dt.strptime(date_for_query, '%Y-%m-%d')
         prev_date_obj = date_obj - timedelta(days=1)
         prev_date = prev_date_obj.strftime('%Y-%m-%d')
         prev_active_services = get_active_services(feed_dir, prev_date)
     except (ValueError, TypeError):
-        logger.warning(f"Could not parse date {date} for previous date calculation")
+        logger.warning(f"Could not parse date {date_for_query} for previous date calculation")
         prev_active_services = []
     
     # Combine services (current day + previous day for next-day trips)
     all_services = list(set(active_services + prev_active_services))
     
     if not all_services:
-        logger.info(f"No active services found for date {date}")
-        return date, {}
+        logger.info(f"No active services found for date {target_date}")
+        return target_date, {}
     
-    logger.info(f"Date {date}: {len(active_services)} current services, {len(prev_active_services)} prev services, {len(all_services)} total")
+    logger.info(f"Date {target_date}: {len(active_services)} current services, {len(prev_active_services)} prev services, {len(all_services)} total")
     
     trips = get_trips_for_services(feed_dir, all_services)
     all_trip_ids = [trip.trip_id for trip_list in trips.values() for trip in trip_list]
@@ -436,6 +510,15 @@ def process_stop_date(args):
     
     # Organize data by stop_code
     stop_arrivals = {}
+    
+    # Store metadata for rolling dates
+    metadata = {}
+    if is_rolling:
+        metadata = {
+            'is_rolling_date': True,
+            'source_date': source_date,
+            'target_date': target_date
+        }
     
     for service_id, trip_list in trips.items():
         # Determine if this service is for current date or next-day from previous date
@@ -517,29 +600,55 @@ def process_stop_date(args):
                     'next_streets': next_streets
                 }
                 
+                # Add rolling date metadata if applicable
+                if is_rolling:
+                    arrival_data['_rolling_date'] = {
+                        'source_date': source_date,
+                        'target_date': target_date
+                    }
+                
                 stop_arrivals[stop_code].append(arrival_data)
     
     # Sort arrivals by time for each stop
     for stop_code in stop_arrivals:
         stop_arrivals[stop_code].sort(key=lambda x: time_to_seconds(x['arrival_time']))
     
-    return date, stop_arrivals
+    return target_date, stop_arrivals
 
 
 def generate_stop_reports_orchestrator(feed_dir: str, output_dir: str,
                                      all_dates_flag: bool, start_date: Optional[str],
                                      end_date: Optional[str], numeric_stop_code: bool = False,
-                                     jobs: int = 0, pretty: bool = False) -> Dict[str, Any]:
+                                     jobs: int = 0, pretty: bool = False,
+                                     rolling_dates_config_path: Optional[str] = None) -> Dict[str, Any]:
     """
     Orchestrate the generation of stop reports.
+    
+    Args:
+        rolling_dates_config_path: Optional path to rolling dates JSON configuration file
     
     Returns:
         Dictionary with generation statistics
     """
     logger.info("Starting stop report generation...")
     
+    # Initialize rolling dates configuration
+    rolling_config = create_rolling_date_config(rolling_dates_config_path)
+    if rolling_config.has_mappings():
+        logger.info(f"Loaded rolling dates configuration with {len(rolling_config.get_all_mappings())} mappings")
+    
     # Get date list
     date_list = get_date_list(all_dates_flag, start_date, end_date, feed_dir)
+    
+    # Add all rolling dates from config to date_list
+    if rolling_config.has_mappings():
+        original_count = len(date_list)
+        rolling_dates = list(rolling_config.get_all_mappings().keys())
+        # Convert to set to avoid duplicates, then back to sorted list
+        date_list = sorted(set(date_list + rolling_dates))
+        added_count = len(date_list) - original_count
+        if added_count > 0:
+            logger.info(f"Added {added_count} rolling dates to processing list")
     
     if not date_list:
         raise ValueError("No valid dates to process.")
@@ -550,8 +659,37 @@ def generate_stop_reports_orchestrator(feed_dir: str, output_dir: str,
     
     logger.info(f"Processing {len(date_list)} dates with {jobs} jobs")
     
+    # Optimize for rolling dates: group target dates by their source date
+    # This avoids re-processing the same source date multiple times
+    source_to_targets = {}  # Maps source_date -> [target_dates]
+    normal_dates = []  # Dates without rolling
+    
+    for date in date_list:
+        source_date = rolling_config.get_source_date(date)
+        if source_date:
+            # This is a rolling date
+            if source_date not in source_to_targets:
+                source_to_targets[source_date] = []
+            source_to_targets[source_date].append(date)
+        else:
+            # Normal date
+            normal_dates.append(date)
+    
+    if source_to_targets:
+        logger.info(f"Found {len(source_to_targets)} source dates serving {sum(len(targets) for targets in source_to_targets.values())} rolling dates")
+    
     # Prepare arguments for multiprocessing
-    process_args = [(feed_dir, date, numeric_stop_code) for date in date_list]
+    # Include rolling date information: (feed_dir, target_date, numeric_stop_code, source_date_or_none)
+    process_args = []
+    
+    # Add normal dates
+    for date in normal_dates:
+        process_args.append((feed_dir, date, numeric_stop_code, None))
+    
+    # Add rolling dates (one arg per target date, but they'll use cached source data)
+    for source_date, target_dates in source_to_targets.items():
+        for target_date in target_dates:
+            process_args.append((feed_dir, target_date, numeric_stop_code, source_date))
     
     # Process dates in parallel
     all_stops_summary = {}
